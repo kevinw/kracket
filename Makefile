@@ -1,8 +1,20 @@
 CC=gcc
 
-output.s: input.scm
-	mzscheme compiler.scm input.scm > output.s
+BIN=a.out
+ASSEMBLY=output.s
 
-a.out: output.s driver.c
-	$(CC) -O3 output.s driver.c
+all: $(ASSEMBLY) $(BIN)
 
+$(ASSEMBLY): input.scm
+	mzscheme compiler.scm input.scm > $@
+
+$(BIN): $(ASSEMBLY) driver.c
+	$(CC) -O3 $^
+
+.PHONY: clean run
+
+clean: 
+	rm $(ASSEMBLY) $(BIN)
+
+run: all
+	./a.out

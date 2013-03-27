@@ -24,10 +24,10 @@
   (printf #<<END
 	.file	"~a"
 	.text
-	.p2align 4,,15
-	.globl	_scheme_entry
-	.def	_scheme_entry;	.scl	2;	.type	32;	.endef
+	.align 4,0x90
+.globl _scheme_entry
 _scheme_entry:
+
 END
     filename
 ))

@@ -1,6 +1,10 @@
+./a.out
+./output.s
+
 #################
 ## Eclipse
 #################
+
 
 *.pydevproject
 .project
