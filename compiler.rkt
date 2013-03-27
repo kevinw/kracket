@@ -64,7 +64,29 @@ END
 (define (compile-file filename output)
   (compile-program (file->value filename) filename output))
 
-(let* [(args (current-command-line-arguments))
-       (input-filename (vector-ref args 0))
-       (output-filename (vector-ref args 1))]
-    (compile-file input-filename output-filename))
+(require racket/system)
+
+(define (system-check cmd)
+  (when (not (system cmd))
+    (error (format "command exited with error: ~a" cmd))))
+
+(define (link assembly)
+  (let [(tmp-file (path->string (make-temporary-file)))]
+    (system-check (format "gcc -O3 driver.c ~a -o ~a" assembly tmp-file))
+    tmp-file))
+
+(define (compile-and-exec program filename)
+  (let [(tmp-file (path->string (make-temporary-file "~a.s")))]
+    (compile-program program filename tmp-file)
+    (let [(exe (link tmp-file))]
+      (string-trim (with-output-to-string
+        (lambda ()
+          (system-check exe)))))))
+
+(let [(args (current-command-line-arguments))]
+  (when (> (vector-length args) 0)
+    (let [(input-filename (vector-ref args 0))
+          (output-filename (vector-ref args 1))]
+       (compile-file input-filename output-filename))))
+
+(provide compile-and-exec compile-file link)

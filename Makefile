@@ -1,20 +1,24 @@
 CC=gcc
 
+SCHEME=mzscheme
 BIN=a.out
 ASSEMBLY=output.s
 
 all: $(ASSEMBLY) $(BIN)
 
-$(ASSEMBLY): input.scm
-	mzscheme compiler.scm input.scm $@
+$(ASSEMBLY): input.rkt
+	$(SCHEME) compiler.rkt input.rkt $@
 
 $(BIN): $(ASSEMBLY) driver.c
-	$(CC) -O3 $^
+	$(CC) -O3 $^ -o $(BIN)
 
-.PHONY: clean run
+.PHONY: clean run test
 
 clean: 
 	rm -f $(ASSEMBLY) $(BIN)
 
 run: all
-	./a.out
+	./$(BIN)
+
+test:
+	$(SCHEME) test-cases.rkt
