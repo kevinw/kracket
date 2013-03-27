@@ -3,6 +3,10 @@
 (define (shift n bits)
   (arithmetic-shift n bits))
 
+(define (value->string x)
+  (with-output-to-string
+    (lambda () (write x))))
+
 (define emit
   (lambda args
     (apply printf args)
@@ -34,26 +38,56 @@ END
     filename
 ))
 
+(define (immediate-rep x)
+  (cond
+    [(integer? x) (apply-tag (shift x fixnum-shift) fixnum-mask fixnum-tag)]
+    [(char? x) (apply-tag (shift (char->integer x) char-shift) char-mask char-tag)]
+    [(boolean? x) (apply-tag (shift (if x 1 0) boolean-shift) boolean-mask boolean-tag)]
+    [(null? x) empty-list]
+    [else
+      (raise-argument-error 'x "kracket?" x)]))
+
+(define (primcall? x)
+  (member (first x) '(add1 sub1)))
+
+(define (primcall-op x)
+  (first x))
+
+(define (primcall-operand1 x)
+  (first (rest x)))
+
+(define (immediate? x)
+  (for/or
+      ([pred (list integer? char? boolean? null?)])
+    (pred x)))
+  
+(define (emit-expr x)
+  (cond
+    [(immediate? x)
+     (emit "movl $~a, %eax" (immediate-rep x))]
+    [(primcall? x)
+     (case (primcall-op x)
+       [(add1)
+        (emit-expr (primcall-operand1 x))
+        (emit "addl $~a, %eax" (immediate-rep 1))]
+       [(sub1)
+        (emit-expr (primcall-operand1 x))
+        (emit "subl $~a, %eax" (immediate-rep 1))])]
+    [else
+      (error (format "don't know how to emit expression \"~a\"" (value->string x)))]))
+
 (define (apply-tag n mask tag)
   (bitwise-ior
     (bitwise-and n (bitwise-not mask))
     (bitwise-and tag mask)))
 
 (define (compile-program x filename output)
-  (define (immediate-rep x)
-    (cond
-      [(integer? x) (apply-tag (shift x fixnum-shift) fixnum-mask fixnum-tag)]
-      [(char? x) (apply-tag (shift (char->integer x) char-shift) char-mask char-tag)]
-      [(boolean? x) (apply-tag (shift (if x 1 0) boolean-shift) boolean-mask boolean-tag)]
-      [(null? x) empty-list]
-      [else
-        (raise-argument-error 'x "kracket?" x)]))
 
   (define (emit-assembly)
     (with-output-to-string
       (lambda ()
         (emit-header filename)
-        (emit "\tmovl $~a, %eax" (immediate-rep x))
+        (emit-expr x)
         (emit "\tret"))))
 
   (let [(assembly (emit-assembly))]
@@ -89,4 +123,4 @@ END
           (output-filename (vector-ref args 1))]
        (compile-file input-filename output-filename))))
 
-(provide compile-and-exec compile-file link)
+(provide compile-and-exec compile-file link immediate? emit-expr primcall?)

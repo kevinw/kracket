@@ -10,7 +10,18 @@
       expected-output
       (format "program text: ~a" program-as-string))))
 
-(check-prog 5 "5")
-(check-prog 5439 "5439")
-(check-prog #\a "a")
-(check-prog #\Z "Z")
+(test-case
+  "Primitives"
+
+  (check-prog 5 "5")
+  (check-prog 5439 "5439")
+  (check-prog #\a "a")
+  (check-prog #\Z "Z"))
+
+(test-case
+  "Unary expressions"
+
+  (check-prog '(add1 5) "6")
+  (check-prog '(add1 -1) "0")
+  (check-prog '(sub1 43) "42")
+  (check-prog '(sub1 0) "-1"))
