@@ -6,7 +6,7 @@ ASSEMBLY=output.s
 all: $(ASSEMBLY) $(BIN)
 
 $(ASSEMBLY): input.scm
-	mzscheme compiler.scm input.scm > $@
+	mzscheme compiler.scm input.scm $@
 
 $(BIN): $(ASSEMBLY) driver.c
 	$(CC) -O3 $^
@@ -14,7 +14,7 @@ $(BIN): $(ASSEMBLY) driver.c
 .PHONY: clean run
 
 clean: 
-	rm $(ASSEMBLY) $(BIN)
+	rm -f $(ASSEMBLY) $(BIN)
 
 run: all
 	./a.out

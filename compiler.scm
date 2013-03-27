@@ -20,6 +20,8 @@
 (define boolean-tag     #b00011111)
 (define boolean-shift   7)
 
+(define empty-list      #b00101111)
+
 (define (emit-header filename)
   (printf #<<END
 	.file	"~a"
@@ -32,21 +34,37 @@ END
     filename
 ))
 
-(define (compile-program x filename)
+(define (apply-tag n mask tag)
+  (bitwise-ior
+    (bitwise-and n (bitwise-not mask))
+    (bitwise-and tag mask)))
+
+(define (compile-program x filename output)
   (define (immediate-rep x)
     (cond
-      [(integer? x) (shift x fixnum-shift)]
-      [(char? x) (shift x char-shift)]
-      [else (error "cannot provide immediate-rep")]))
+      [(integer? x) (apply-tag (shift x fixnum-shift) fixnum-mask fixnum-tag)]
+      [(char? x) (apply-tag (shift (char->integer x) char-shift) char-mask char-tag)]
+      [(boolean? x) (apply-tag (shift (if x 1 0) boolean-shift) boolean-mask boolean-tag)]
+      [(null? x) empty-list]
+      [else
+        (raise-argument-error 'x "kracket?" x)]))
 
-  (emit-header filename)
-  (emit "\tmovl $~a, %eax" (immediate-rep x))
-  (emit "\tret"))
+  (define (emit-assembly)
+    (with-output-to-string
+      (lambda ()
+        (emit-header filename)
+        (emit "\tmovl $~a, %eax" (immediate-rep x))
+        (emit "\tret"))))
 
-(define (compile-file filename)
-  (compile-program (file->value filename) filename))
+  (let [(assembly (emit-assembly))]
+    (with-output-to-file output
+      #:exists 'replace
+      (lambda () (display assembly)))))
 
-(let [(args (current-command-line-arguments))]
-  (if (> (vector-length args) 0)
-    (compile-file (vector-ref (current-command-line-arguments) 0))
-    (compile-program (read (current-input-port)) "stdin.scm")))
+(define (compile-file filename output)
+  (compile-program (file->value filename) filename output))
+
+(let* [(args (current-command-line-arguments))
+       (input-filename (vector-ref args 0))
+       (output-filename (vector-ref args 1))]
+    (compile-file input-filename output-filename))
