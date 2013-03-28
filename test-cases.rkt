@@ -25,3 +25,13 @@
   (check-prog '(add1 -1) "0")
   (check-prog '(sub1 43) "42")
   (check-prog '(sub1 0) "-1"))
+
+(test-case
+  "Primitive conversions"
+
+  (check-prog '(integer->char 65) "A")
+  (check-prog '(integer->char 97) "a")
+  (check-prog '(integer->char 0) "\u0000")
+  (check-prog '(char->integer #\a) "97")
+  (check-prog '(char->integer #\F) "70")
+  (check-prog '(char->integer #\u0000) "0"))

@@ -1,1 +1,1 @@
-#\a
+(integer->char 65)

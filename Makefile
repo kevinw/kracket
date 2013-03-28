@@ -6,7 +6,7 @@ ASSEMBLY=output.s
 
 all: $(ASSEMBLY) $(BIN)
 
-$(ASSEMBLY): input.rkt
+$(ASSEMBLY): compiler.rkt input.rkt
 	$(SCHEME) compiler.rkt input.rkt $@
 
 $(BIN): $(ASSEMBLY) driver.c

@@ -48,7 +48,7 @@ END
       (raise-argument-error 'x "kracket?" x)]))
 
 (define (primcall? x)
-  (member (first x) '(add1 sub1)))
+  (member (first x) '(add1 sub1 integer->char char->integer)))
 
 (define (primcall-op x)
   (first x))
@@ -72,7 +72,14 @@ END
         (emit "addl $~a, %eax" (immediate-rep 1))]
        [(sub1)
         (emit-expr (primcall-operand1 x))
-        (emit "subl $~a, %eax" (immediate-rep 1))])]
+        (emit "subl $~a, %eax" (immediate-rep 1))]
+       [(integer->char)
+        (emit-expr (primcall-operand1 x))
+        (emit "shl $~a, %eax" (- char-shift fixnum-shift))
+        (emit "or $~a, %eax" char-tag)]
+       [(char->integer)
+        (emit-expr (primcall-operand1 x))
+        (emit "shr $~a, %eax" (- char-shift fixnum-shift))])]
     [else
       (error (format "don't know how to emit expression \"~a\"" (value->string x)))]))
 
