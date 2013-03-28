@@ -9,7 +9,7 @@ all: $(ASSEMBLY) $(BIN)
 $(ASSEMBLY): compiler.rkt input.rkt
 	$(SCHEME) compiler.rkt input.rkt $@
 
-$(BIN): $(ASSEMBLY) driver.c
+$(BIN): $(ASSEMBLY) driver.c aux.c
 	$(CC) -O3 $^ -o $(BIN)
 
 .PHONY: clean run test

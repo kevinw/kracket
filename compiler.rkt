@@ -9,6 +9,7 @@
 
 (define emit
   (lambda args
+    (printf "\t")
     (apply printf args)
     (printf "\n")))
 
@@ -21,7 +22,7 @@
 (define char-shift      8)
 
 (define boolean-mask    #b01111111)
-(define boolean-tag     #b00011111)
+(define boolean-tag     #b00111111)
 (define boolean-shift   7)
 
 (define empty-list      #b00101111)
@@ -48,7 +49,7 @@ END
       (raise-argument-error 'x "kracket?" x)]))
 
 (define (primcall? x)
-  (member (first x) '(add1 sub1 integer->char char->integer)))
+  (member (first x) '(add1 sub1 integer->char char->integer zero?)))
 
 (define (primcall-op x)
   (first x))
@@ -79,7 +80,16 @@ END
         (emit "or $~a, %eax" char-tag)]
        [(char->integer)
         (emit-expr (primcall-operand1 x))
-        (emit "shr $~a, %eax" (- char-shift fixnum-shift))])]
+        (emit "shr $~a, %eax" (- char-shift fixnum-shift))]
+       [(zero?)
+        (emit-expr (primcall-operand1 x))
+        (emit "cmpl $0, %eax")
+        (emit "movl $0, %eax")
+        (emit "sete %al")
+        (emit "sall $~a, %eax" boolean-shift)
+        (emit "orl $~a, %eax" boolean-tag)]
+       )]
+
     [else
       (error (format "don't know how to emit expression \"~a\"" (value->string x)))]))
 
@@ -113,7 +123,7 @@ END
 
 (define (link assembly)
   (let [(tmp-file (path->string (make-temporary-file)))]
-    (system-check (format "gcc -O3 driver.c ~a -o ~a" assembly tmp-file))
+    (system-check (format "gcc -O3 driver.c aux.c ~a -o ~a" assembly tmp-file))
     tmp-file))
 
 (define (compile-and-exec program filename)

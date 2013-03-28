@@ -1,1 +1,1 @@
-(integer->char 65)
+(zero? 5)

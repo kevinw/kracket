@@ -11,7 +11,7 @@
 #define char_shift      8
 
 #define boolean_mask    B8(01111111)
-#define boolean_tag     B8(00011111)
+#define boolean_tag     B8(00111111)
 #define boolean_shift   7
 
 #define empty_list      B8(00101111)
@@ -29,6 +29,10 @@ int main(int argc, char**argv) {
         printf(val >> boolean_shift ? "#t\n" : "#f\n");
     } else if (val == empty_list) {
         printf("'()\n");
+    } else {
+        printf("got unknown value %d\n", val);
+        printBinary(val);
+        return 1;
     }
 
     return 0;

@@ -35,3 +35,11 @@
   (check-prog '(char->integer #\a) "97")
   (check-prog '(char->integer #\F) "70")
   (check-prog '(char->integer #\u0000) "0"))
+
+(test-case
+  "Primitive predicates"
+
+  (check-prog '(zero? 0)' "#t")
+  (check-prog '(zero? -1)' "#f")
+  (check-prog '(zero? 1)' "#f")
+  (check-prog '(zero? 9999)' "#f"))
