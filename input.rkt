@@ -1,1 +1,1 @@
-(zero? 5)
+(integer? 5)

@@ -49,7 +49,8 @@ END
       (raise-argument-error 'x "kracket?" x)]))
 
 (define (primcall? x)
-  (member (first x) '(add1 sub1 integer->char char->integer zero?)))
+  (member (first x)
+    '(add1 sub1 integer->char char->integer zero? integer? boolean?)))
 
 (define (primcall-op x)
   (first x))
@@ -88,8 +89,23 @@ END
         (emit "sete %al")
         (emit "sall $~a, %eax" boolean-shift)
         (emit "orl $~a, %eax" boolean-tag)]
+       [(integer?)
+        (emit-expr (primcall-operand1 x))
+        (emit "andl $~a, %eax" fixnum-mask)
+        (emit "cmpl $~a, %eax" fixnum-tag)
+        (emit "movl $0, %eax")
+        (emit "sete %al")
+        (emit "sall $~a, %eax" boolean-shift)
+        (emit "orl $~a, %eax" boolean-tag)]
+       [(boolean?)
+        (emit-expr (primcall-operand1 x))
+        (emit "andl $~a, %eax" boolean-mask)
+        (emit "cmpl $~a, %eax" boolean-tag)
+        (emit "movl $0, %eax")
+        (emit "sete %al")
+        (emit "sall $~a, %eax" boolean-shift)
+        (emit "orl $~a, %eax" boolean-tag)]
        )]
-
     [else
       (error (format "don't know how to emit expression \"~a\"" (value->string x)))]))
 
