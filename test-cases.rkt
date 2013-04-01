@@ -75,5 +75,26 @@
 
   (check-prog '(= 0 1) "#f")
   (check-prog '(= 0 0) "#t")
-  (check-prog '(= -500 -500) "#t"))
+  (check-prog '(= -500 -500) "#t")
+
+  (check-prog '(< 0 1) "#t")
+  (check-prog '(< 1 1) "#f")
+  (check-prog '(< 10 10) "#f"))
+
+(test-case
+  "Let expressions"
+
+  (check-prog '(let ((a 1)) a) "1")
+  (check-prog '(let ((a 2) (b 150)) (* a b)) "300"))
+
+(test-case
+  "If expressions"
+
+  (check-prog '(if #t 1 2) "1")
+  (check-prog '(if #f 1 2) "2")
+  (check-prog '(if #\c
+                 (let [(foo #\f)]
+                   (if foo 42 100))
+                 99)
+              "42"))
 

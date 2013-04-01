@@ -4,18 +4,21 @@
 
 (define wordsize 4)
 
-(define (shift n bits)
-  (arithmetic-shift n bits))
+(define shift arithmetic-shift)
 
 (define (value->string x)
   (with-output-to-string
     (lambda () (write x))))
 
+(define emit-no-tab
+  (lambda args
+    (apply printf args)
+    (printf "\n")))
+
 (define emit
   (lambda args
     (printf "\t")
-    (apply printf args)
-    (printf "\n")))
+    (apply emit-no-tab args)))
 
 (define fixnum-mask     #b00000011)
 (define fixnum-tag      #b00000000)
@@ -54,7 +57,7 @@ END
 
 (define (primcall? x)
   (member (first x)
-    '(add1 sub1 integer->char char->integer zero? integer? boolean? + - * =)))
+    '(add1 sub1 integer->char char->integer zero? integer? boolean? + - * = <)))
 
 (define (primcall-op x)
   (first x))
@@ -70,6 +73,19 @@ END
       ([pred (list integer? char? boolean? null?)])
     (pred x)))
 
+(define (variable? x)
+  (symbol? x))
+
+(define (lookup x env)
+  (hash-ref env x))
+
+(define (if? x)
+  (eq? (first x) 'if))
+
+(define (if-test x) (second x))
+(define (if-conseq x) (third x))
+(define (if-altern x) (fourth x))
+
 (define (prep-binary-call x si env)
   (emit-expr (primcall-operand2 x) si env)
   (emit "movl %eax, ~a(%rsp)" si)
@@ -77,6 +93,33 @@ END
     (primcall-operand1 x)
     (- si wordsize)
     env))
+
+(define unique-label
+  (let ((count 0))
+    (lambda ()
+      (set! count (+ count 1))
+      (format "label~a" count))))
+
+(define eax 'eax)
+
+(define (emit-cmpl constant reg)
+  (emit "cmpl $~a, %~a" constant (symbol->string reg)))
+
+(define (emit-je label) (emit "je ~a" label))
+(define (emit-jmp label) (emit "jmp ~a" label))
+(define (emit-label label)
+  (emit-no-tab "~a:" label))
+
+(define (emit-if test conseq altern si env)
+  (let [(L0 (unique-label)) (L1 (unique-label))]
+    (emit-expr test si env)
+    (emit-cmpl (immediate-rep #f) eax)
+    (emit-je L0)
+    (emit-expr conseq si env)
+    (emit-jmp L1)
+    (emit-label L0)
+    (emit-expr altern si env)
+    (emit-label L1)))
 
 (define (emit-primitive-call x si env)
   (case (primcall-op x)
@@ -97,6 +140,13 @@ END
      (emit "cmpl ~a(%rsp), %eax" si)
      (emit "movl $0, %eax")
      (emit "sete %al")
+     (emit "sall $~a, %eax" boolean-shift)
+     (emit "orl $~a, %eax" boolean-tag)]
+    [(<)
+     (prep-binary-call x si env)
+     (emit "cmpl ~a(%rsp), %eax" si)
+     (emit "movl $0, %eax")
+     (emit "setl %al")
      (emit "sall $~a, %eax" boolean-shift)
      (emit "orl $~a, %eax" boolean-tag)]
     [(add1)
@@ -135,11 +185,40 @@ END
      (emit "sete %al")
      (emit "sall $~a, %eax" boolean-shift)
      (emit "orl $~a, %eax" boolean-tag)]))
+
+(define (let? x) (eq? (first x) 'let))
+(define (bindings x) (second x))
+(define (body x) (third x))
+
+(define (lhs binding) (first binding))
+(define (rhs binding) (second binding))
+
+(define (make-env) (hash))
+(define (extend-env variable-name stack-index env)
+  (hash-set env variable-name stack-index))
+
+(define (emit-let bindings body si env)
+  (let f [(b* bindings) (new-env env) (si si)]
+    (cond
+      [(null? b*) (emit-expr body si new-env)]
+      [else
+        (let [(b (first b*))]
+          (emit-expr (rhs b) si env)
+          (emit "movl %eax, ~a(%rsp)" si)
+          (f (rest b*)
+             (extend-env (lhs b) si new-env)
+             (- si wordsize)))])))
   
 (define (emit-expr x si env)
   (cond
     [(immediate? x)
      (emit "movl $~a, %eax" (immediate-rep x))]
+    [(variable? x)
+     (emit "movl ~a(%rsp), %eax" (lookup x env))]
+    [(let? x)
+     (emit-let (bindings x) (body x) si env)]
+    [(if? x)
+     (emit-if (if-test x) (if-conseq x) (if-altern x) si env)]
     [(primcall? x)
      (emit-primitive-call x si env)]
     [else
@@ -151,12 +230,11 @@ END
     (bitwise-and tag mask)))
 
 (define (compile-program x filename output)
-
   (define (emit-assembly)
     (with-output-to-string
       (lambda ()
         (emit-header filename)
-        (emit-expr x -4 (make-immutable-hash))
+        (emit-expr x -4 (hash))
         (emit "ret"))))
 
   (let [(assembly (emit-assembly))]
