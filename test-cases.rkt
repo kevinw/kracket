@@ -59,3 +59,21 @@
   (check-prog '(boolean? -1) "#f")
   (check-prog '(boolean? 500) "#f")
   (check-prog '(boolean? #\c) "#f"))
+
+(test-case
+  "Binary primitives"
+
+  (check-prog '(+ 4 9) "13")
+  (check-prog '(+ 0 0) "0")
+
+  (check-prog '(- 0 5) "-5")
+  (check-prog '(- 100 99) "1")
+
+  (check-prog '(* 3 7) "21")
+  (check-prog '(* -2 -3) "6")
+  (check-prog '(* -1 1000) "-1000")
+
+  (check-prog '(= 0 1) "#f")
+  (check-prog '(= 0 0) "#t")
+  (check-prog '(= -500 -500) "#t"))
+

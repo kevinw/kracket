@@ -1,6 +1,7 @@
 #include <stdio.h>
 
 #include "binary.h"
+#include "aux.h"
 
 #define fixnum_mask     B8(00000011)
 #define fixnum_tag      B8(00000000)
