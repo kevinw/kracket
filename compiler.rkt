@@ -3,6 +3,10 @@
 (require racket/system)
 
 (define wordsize 4)
+(define eax 'eax)
+(define stack-register 'rsp)
+(define (stack-ptr index)
+  (format "~a(%~a)" index stack-register))
 
 (define shift arithmetic-shift)
 
@@ -88,7 +92,7 @@ END
 
 (define (prep-binary-call x si env)
   (emit-expr (primcall-operand2 x) si env)
-  (emit "movl %eax, ~a(%rsp)" si)
+  (emit "movl %eax, ~a" (stack-ptr si))
   (emit-expr
     (primcall-operand1 x)
     (- si wordsize)
@@ -99,8 +103,6 @@ END
     (lambda ()
       (set! count (+ count 1))
       (format "label~a" count))))
-
-(define eax 'eax)
 
 (define (emit-cmpl constant reg)
   (emit "cmpl $~a, %~a" constant (symbol->string reg)))
@@ -125,26 +127,26 @@ END
   (case (primcall-op x)
     [(+)
      (prep-binary-call x si env)
-     (emit "addl ~a(%rsp), %eax" si)]
+     (emit "addl ~a, %eax" (stack-ptr si))]
     [(-)
      (prep-binary-call x si env)
-     (emit "subl ~a(%rsp), %eax" si)]
+     (emit "subl ~a, %eax" (stack-ptr si))]
     [(*)
      (prep-binary-call x si env)
      (emit "shrl $~a, %eax" fixnum-shift)
-     (emit "shrl $~a, ~a(%rsp)" fixnum-shift si)
-     (emit "imull ~a(%rsp), %eax" si)
+     (emit "shrl $~a, ~a" fixnum-shift (stack-ptr si))
+     (emit "imull ~a, %eax" (stack-ptr si))
      (emit "shl $~a, %eax" fixnum-shift)]
     [(=)
      (prep-binary-call x si env)
-     (emit "cmpl ~a(%rsp), %eax" si)
+     (emit "cmpl ~a, %eax" (stack-ptr si))
      (emit "movl $0, %eax")
      (emit "sete %al")
      (emit "sall $~a, %eax" boolean-shift)
      (emit "orl $~a, %eax" boolean-tag)]
     [(<)
      (prep-binary-call x si env)
-     (emit "cmpl ~a(%rsp), %eax" si)
+     (emit "cmpl ~a, %eax" (stack-ptr si))
      (emit "movl $0, %eax")
      (emit "setl %al")
      (emit "sall $~a, %eax" boolean-shift)
@@ -214,7 +216,7 @@ END
     [(immediate? x)
      (emit "movl $~a, %eax" (immediate-rep x))]
     [(variable? x)
-     (emit "movl ~a(%rsp), %eax" (lookup x env))]
+     (emit "movl ~a, %eax" (stack-ptr (lookup x env)))]
     [(let? x)
      (emit-let (bindings x) (body x) si env)]
     [(if? x)
