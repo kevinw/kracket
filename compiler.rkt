@@ -2,8 +2,11 @@
 
 (require racket/system)
 
-(define wordsize 4)
+(require "assembler.rkt")
+
+(define word-size 8)
 (define eax 'eax)
+(define rax 'rax)
 (define stack-register 'rsp)
 (define (stack-ptr index)
   (format "~a(%~a)" index stack-register))
@@ -13,16 +16,6 @@
 (define (value->string x)
   (with-output-to-string
     (lambda () (write x))))
-
-(define emit-no-tab
-  (lambda args
-    (apply printf args)
-    (printf "\n")))
-
-(define emit
-  (lambda args
-    (printf "\t")
-    (apply emit-no-tab args)))
 
 (define fixnum-mask     #b00000011)
 (define fixnum-tag      #b00000000)
@@ -38,17 +31,30 @@
 
 (define empty-list      #b00101111)
 
+(define heap-mask       #b00000111)
+
+(define pair-tag        #b00000001)
+(define vector-tag      #b00000010)
+(define string-tag      #b00000011)
+(define symbol-tag      #b00000101)
+(define closure-tag     #b00000110)
+
 (define (emit-header filename)
+	; .file	"~a"
   (printf #<<END
-	.file	"~a"
 	.text
 	.align 4,0x90
 .globl _scheme_entry
 _scheme_entry:
 
 END
-    filename
+    ; filename
 ))
+
+(define (apply-tag n mask tag)
+  (bitwise-ior
+    (bitwise-and n (bitwise-not mask))
+    (bitwise-and tag mask)))
 
 (define (immediate-rep x)
   (cond
@@ -56,46 +62,35 @@ END
     [(char? x) (apply-tag (shift (char->integer x) char-shift) char-mask char-tag)]
     [(boolean? x) (apply-tag (shift (if x 1 0) boolean-shift) boolean-mask boolean-tag)]
     [(null? x) empty-list]
-    [else
-      (raise-argument-error 'x "kracket?" x)]))
+    [else (raise-argument-error 'x "don't know how to provide an immediate-rep" x)]))
 
 (define (primcall? x)
   (member (first x)
     '(add1 sub1 integer->char char->integer zero? integer? boolean? + - * = <)))
 
-(define (primcall-op x)
-  (first x))
-
-(define (primcall-operand1 x)
-  (first (rest x)))
-
-(define (primcall-operand2 x)
-  (first (rest (rest x))))
+(define (primcall-op x) (first x))
+(define (primcall-operand1 x) (second x))
+(define (primcall-operand2 x) (third x))
 
 (define (immediate? x)
   (for/or
       ([pred (list integer? char? boolean? null?)])
     (pred x)))
 
-(define (variable? x)
-  (symbol? x))
+(define (variable? x) (symbol? x))
+(define (lookup x env) (hash-ref env x))
 
-(define (lookup x env)
-  (hash-ref env x))
-
-(define (if? x)
-  (eq? (first x) 'if))
-
+(define (if? x) (eq? (first x) 'if))
 (define (if-test x) (second x))
 (define (if-conseq x) (third x))
 (define (if-altern x) (fourth x))
 
 (define (prep-binary-call x si env)
   (emit-expr (primcall-operand2 x) si env)
-  (emit "movl %eax, ~a" (stack-ptr si))
+  (emit "mov %rax, ~a" (stack-ptr si))
   (emit-expr
     (primcall-operand1 x)
-    (- si wordsize)
+    (- si word-size)
     env))
 
 (define unique-label
@@ -127,66 +122,67 @@ END
   (case (primcall-op x)
     [(+)
      (prep-binary-call x si env)
-     (emit "addl ~a, %eax" (stack-ptr si))]
+     (add (stack-ptr si) rax)]
     [(-)
      (prep-binary-call x si env)
-     (emit "subl ~a, %eax" (stack-ptr si))]
+     (sub (stack-ptr si) rax)]
     [(*)
      (prep-binary-call x si env)
-     (emit "shrl $~a, %eax" fixnum-shift)
-     (emit "shrl $~a, ~a" fixnum-shift (stack-ptr si))
-     (emit "imull ~a, %eax" (stack-ptr si))
-     (emit "shl $~a, %eax" fixnum-shift)]
+     (shr fixnum-shift rax)
+     (shr fixnum-shift (stack-ptr si))
+     (imul (stack-ptr si) rax)
+     (shl fixnum-shift rax)]
     [(=)
      (prep-binary-call x si env)
-     (emit "cmpl ~a, %eax" (stack-ptr si))
-     (emit "movl $0, %eax")
+     (emit "cmp ~a, %rax" (stack-ptr si))
+     (emit "mov $0, %rax")
      (emit "sete %al")
-     (emit "sall $~a, %eax" boolean-shift)
-     (emit "orl $~a, %eax" boolean-tag)]
+     (emit "sal $~a, %rax" boolean-shift)
+     (assemble-or boolean-tag rax)]
+     ;(emit "or $~a, %rax" boolean-tag)]
     [(<)
      (prep-binary-call x si env)
-     (emit "cmpl ~a, %eax" (stack-ptr si))
-     (emit "movl $0, %eax")
+     (emit "cmp ~a, %rax" (stack-ptr si))
+     (emit "mov $0, %rax")
      (emit "setl %al")
-     (emit "sall $~a, %eax" boolean-shift)
-     (emit "orl $~a, %eax" boolean-tag)]
+     (emit "sal $~a, %rax" boolean-shift)
+     (emit "or $~a, %rax" boolean-tag)]
     [(add1)
      (emit-expr (primcall-operand1 x) si env)
-     (emit "addl $~a, %eax" (immediate-rep 1))]
+     (emit "add $~a, %rax" (immediate-rep 1))]
     [(sub1)
      (emit-expr (primcall-operand1 x) si env)
-     (emit "subl $~a, %eax" (immediate-rep 1))]
+     (emit "subq $~a, %rax" (immediate-rep 1))]
     [(integer->char)
      (emit-expr (primcall-operand1 x) si env)
-     (emit "shl $~a, %eax" (- char-shift fixnum-shift))
-     (emit "or $~a, %eax" char-tag)]
+     (emit "shl $~a, %rax" (- char-shift fixnum-shift))
+     (emit "or $~a, %rax" char-tag)]
     [(char->integer)
      (emit-expr (primcall-operand1 x) si env)
-     (emit "shr $~a, %eax" (- char-shift fixnum-shift))]
+     (emit "shr $~a, %rax" (- char-shift fixnum-shift))]
     [(zero?)
      (emit-expr (primcall-operand1 x) si env)
-     (emit "cmpl $0, %eax")
-     (emit "movl $0, %eax")
+     (emit "cmp $0, %rax")
+     (emit "mov $0, %rax")
      (emit "sete %al")
-     (emit "sall $~a, %eax" boolean-shift)
-     (emit "orl $~a, %eax" boolean-tag)]
+     (emit "sal $~a, %rax" boolean-shift)
+     (emit "or $~a, %rax" boolean-tag)]
     [(integer?)
      (emit-expr (primcall-operand1 x) si env)
-     (emit "andl $~a, %eax" fixnum-mask)
-     (emit "cmpl $~a, %eax" fixnum-tag)
-     (emit "movl $0, %eax")
+     (emit "and $~a, %rax" fixnum-mask)
+     (emit "cmp $~a, %rax" fixnum-tag)
+     (emit "mov $0, %rax")
      (emit "sete %al")
-     (emit "sall $~a, %eax" boolean-shift)
-     (emit "orl $~a, %eax" boolean-tag)]
+     (emit "sal $~a, %rax" boolean-shift)
+     (emit "or $~a, %rax" boolean-tag)]
     [(boolean?)
      (emit-expr (primcall-operand1 x) si env)
-     (emit "andl $~a, %eax" boolean-mask)
-     (emit "cmpl $~a, %eax" boolean-tag)
-     (emit "movl $0, %eax")
+     (emit "and $~a, %rax" boolean-mask)
+     (emit "cmp $~a, %rax" boolean-tag)
+     (emit "mov $0, %rax")
      (emit "sete %al")
-     (emit "sall $~a, %eax" boolean-shift)
-     (emit "orl $~a, %eax" boolean-tag)]))
+     (emit "sal $~a, %rax" boolean-shift)
+     (emit "or $~a, %rax" boolean-tag)]))
 
 (define (let? x) (eq? (first x) 'let))
 (define (bindings x) (second x))
@@ -206,38 +202,61 @@ END
       [else
         (let [(b (first b*))]
           (emit-expr (rhs b) si env)
-          (emit "movl %eax, ~a(%rsp)" si)
+          (emit "mov %rax, ~a" (stack-ptr si))
           (f (rest b*)
              (extend-env (lhs b) si new-env)
-             (- si wordsize)))])))
-  
-(define (emit-expr x si env)
+             (- si word-size)))])))
+
+(define heap-register 'rdi)
+(define (heap-ptr offset)
+  (format "~a(%~a)" offset (symbol->string heap-register)))
+
+(define (emit-cons head tail si env)
+  (emit-expr head si env (heap-ptr 0))
+  (emit-expr tail si env (heap-ptr word-size))
+  (mov heap-register rax)
+  (or pair-tag rax)
+  (emit "add $~a, %~a" (* 2 word-size) heap-register))
+
+(define (cons-call? x) (eq? (first x) 'cons))
+(define (cons-head x) (first (rest x)))
+(define (cons-tail x) (second (rest x)))
+
+(define (emit-expr x si env [dest rax])
   (cond
     [(immediate? x)
-     (emit "movl $~a, %eax" (immediate-rep x))]
+     (emit "movq $~a, ~a" (immediate-rep x) (dest-as-string dest))]
     [(variable? x)
-     (emit "movl ~a, %eax" (stack-ptr (lookup x env)))]
+     (emit "mov ~a, %rax" (stack-ptr (lookup x env)))]
     [(let? x)
      (emit-let (bindings x) (body x) si env)]
     [(if? x)
      (emit-if (if-test x) (if-conseq x) (if-altern x) si env)]
     [(primcall? x)
      (emit-primitive-call x si env)]
+    [(cons-call? x)
+     (emit-cons (cons-head x) (cons-tail x) si env)]
     [else
       (error (format "don't know how to emit expression \"~a\"" (value->string x)))]))
 
-(define (apply-tag n mask tag)
-  (bitwise-ior
-    (bitwise-and n (bitwise-not mask))
-    (bitwise-and tag mask)))
+(define size-suffixes
+  '((x86 "l")
+    (x86_64 "q")))
+
+(define (assemble-sources expr filename architecture)
+  (let ([stack-index (- word-size)]
+        [env (hash)])
+    (emit-header filename)
+    (emit-expr expr stack-index env)
+    (emit "ret")))
 
 (define (compile-program x filename output)
   (define (emit-assembly)
     (with-output-to-string
       (lambda ()
-        (emit-header filename)
-        (emit-expr x -4 (hash))
-        (emit "ret"))))
+        (let ([size-suffix (second (assoc 'x86_64 size-suffixes))])
+            (parameterize ([current-size-suffix size-suffix])
+                (assemble-sources x filename 'x86))))))
 
   (let [(assembly (emit-assembly))]
     (with-output-to-file output
