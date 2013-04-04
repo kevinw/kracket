@@ -1,7 +1,6 @@
 #lang racket
 
-(provide mov sub assemble-or shr shl imul
-         emit emit-no-tab dest-as-string current-size-suffix)
+(provide emit emit-no-tab dest-as-string current-size-suffix)
 
 (define current-size-suffix (make-parameter "l"))
 
@@ -31,39 +30,49 @@
     (64, "l")))
 
 (define-syntax-rule (defop <name>)
-  (define (<name> src dest)
-    (emit "~a ~a, ~a"
-          (with-size-suffix (symbol->string '<name>))
-          (src-as-string src)
-          (dest-as-string dest))))
+  (begin
+      (provide <name>)
+      (define (<name> src dest)
+        (emit "~a ~a, ~a"
+              (with-size-suffix (symbol->string '<name>))
+              (src-as-string src)
+              (dest-as-string dest)))))
 
 (define (with-size-suffix op)
   (format "~a~a" op (current-size-suffix)))
 
 (defop mov)
+(defop add)
+(defop sub)
+(defop shr)
+(defop shl)
+(defop imul)
+(defop cmp)
+(defop sal)
 
-(provide add)
+(define (or! src dest) (emit "~a ~a, ~a" (with-size-suffix "or") (src-as-string src) (dest-as-string dest)))
+(provide or!)
 
-; (define (mov src dest)
-  ; (emit "~a ~a, ~a" (with-size-suffix "mov") (src-as-string src) (dest-as-string dest)))
+(define (je label) (emit "je ~a" label))
+(provide je)
 
-(define (assemble-or src dest)
-  (emit "~a ~a, ~a" (with-size-suffix "or") (src-as-string src) (dest-as-string dest)))
+(define (jmp label) (emit "jmp ~a" label))
+(provide jmp)
 
-(define (add src dest)
-  (emit "~a ~a, ~a" (with-size-suffix "add") (src-as-string src) (dest-as-string dest)))
+(define (label label) (emit-no-tab "~a:" label))
+(provide label)
 
-(define (sub src dest)
-  (emit "~a ~a, ~a" (with-size-suffix "sub") (src-as-string src) (dest-as-string dest)))
+(define (ret) (emit "ret"))
+(provide ret)
 
-(define (shr src dest)
-  (emit "~a ~a, ~a" (with-size-suffix "shr") (src-as-string src) (dest-as-string dest)))
+(define (and! src dest) (emit "~a ~a, ~a" (with-size-suffix "and") (src-as-string src) (dest-as-string dest)))
+(provide and!)
 
-(define (shl src dest)
-  (emit "~a ~a, ~a" (with-size-suffix "shl") (src-as-string src) (dest-as-string dest)))
+(define (sete dest) (emit "sete ~a" (dest-as-string dest)))
+(provide sete)
 
-(define (imul src dest)
-  (emit "~a ~a, ~a" (with-size-suffix "imul") (src-as-string src) (dest-as-string dest)))
+(define (setl dest) (emit "setl ~a" (dest-as-string dest)))
+(provide setl)
 
 #|
 (define-syntax-rule (mov src dest)
