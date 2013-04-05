@@ -27,7 +27,7 @@
 #define closure_tag     B8(00000110)
 
 
-#define HEAP_SIZE 5 * 1024 * 1024
+#define HEAP_SIZE ((size_t)(5 * 1024 * 1024))
 #define wordsize sizeof(size_t)
 
 #include <inttypes.h>

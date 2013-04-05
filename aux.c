@@ -9,7 +9,7 @@ static void strreverse(char* begin, char* end) {
 		aux=*end, *end--=*begin, *begin++=aux;
 }
 	
-static void itoa(int value, char* str, int base) {
+static void itoa(intptr_t value, char* str, int base) {
 	static char num[] = "0123456789abcdefghijklmnopqrstuvwxyz";
 	char* wstr=str;
 	int sign;
@@ -23,7 +23,7 @@ static void itoa(int value, char* str, int base) {
 
 	// Conversion. Number is reversed.
 	do {
-		res = div(value,base);
+		res = div(value, base);
 		*wstr++ = num[res.rem];
 	} while(value=res.quot);
 	if (sign < 0) *wstr++='-';
@@ -33,8 +33,8 @@ static void itoa(int value, char* str, int base) {
 	strreverse(str, wstr - 1);
 }
 
-void printBinary(int i) {
-  char buffer[33];
+void printBinary(intptr_t i) {
+  char buffer[100];
   itoa(i, buffer, 2);
   printf("%s\n", buffer);
 }

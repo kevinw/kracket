@@ -3,12 +3,20 @@
 (require rackunit "compiler.rkt")
 
 (define (check-prog program expected-output)
-  (let [(program-output (compile-and-exec program "test-program"))
+  (let [(program-output-32 (compile-and-exec program "test-program" 'x86))
+        (program-output-64 (compile-and-exec program "test-program" 'x86_64))
         (program-as-string (with-output-to-string (lambda () (write program))))]
+
     (check-equal?
-      program-output
+      program-output-32
+      expected-output
+      (format "program text: ~a" program-as-string))
+
+    (check-equal?
+      program-output-64
       expected-output
       (format "program text: ~a" program-as-string))))
+
 
 (test-case
   "Primitives"

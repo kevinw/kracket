@@ -4,13 +4,34 @@
 
 (require "assembler.rkt")
 
-(define word-size 8)
+(define gcc-arch-flags
+  '((x86 "i386")
+    (x86_64 "x86_64")))
+
+(define (compile-cmd input output arch)
+  ; Returns the GCC command to link together a complete progam.
+  (let ([gcc-arch-flag (second (assoc arch gcc-arch-flags))])
+    (format "gcc -arch ~a -g -O3 driver.c aux.c ~a -o ~a" gcc-arch-flag input output)))
 
 (define eax 'eax)
 (define rax 'rax)
-(define al 'al)
+(define al  'al)
+(define rsp 'rsp)
 
-(define stack-register 'rsp)
+(define word-size (make-parameter 8))
+
+(define scratch-register (make-parameter rax))
+
+(define-syntax scratch
+  (syntax-id-rules ()
+    [scratch (scratch-register)]))
+
+(define stack-register-param (make-parameter rsp))
+
+(define-syntax stack-register
+  (syntax-id-rules ()
+    [stack-register (stack-register-param)]))
+
 (define (stack-ptr index)
   (format "~a(%~a)" index stack-register))
 
@@ -19,6 +40,8 @@
 (define (value->string x)
   (with-output-to-string
     (lambda () (write x))))
+
+; Tag objects in memory based on their type
 
 (define fixnum-mask     #b00000011)
 (define fixnum-tag      #b00000000)
@@ -55,11 +78,13 @@ END
 ))
 
 (define (apply-tag n mask tag)
+  ; Take a number n and apply ~mask & tag
   (bitwise-ior
     (bitwise-and n (bitwise-not mask))
     (bitwise-and tag mask)))
 
 (define (immediate-rep x)
+  ; Return the integer constant that represents x
   (cond
     [(integer? x) (apply-tag (shift x fixnum-shift) fixnum-mask fixnum-tag)]
     [(char? x) (apply-tag (shift (char->integer x) char-shift) char-mask char-tag)]
@@ -90,10 +115,10 @@ END
 
 (define (prep-binary-call x si env)
   (emit-expr (primcall-operand2 x) si env)
-  (mov rax (stack-ptr si))
+  (mov scratch (stack-ptr si))
   (emit-expr
     (primcall-operand1 x)
-    (- si word-size)
+    (- si (word-size))
     env))
 
 (define unique-label
@@ -106,7 +131,7 @@ END
   (let ([L0 (unique-label)]
         [L1 (unique-label)])
     (emit-expr test si env)
-    (cmp (immediate-rep #f) rax)
+    (cmp (immediate-rep #f) scratch)
     (je L0)
     (emit-expr conseq si env)
     (jmp L1)
@@ -118,66 +143,66 @@ END
   (case (primcall-op x)
     [(+)
      (prep-binary-call x si env)
-     (add (stack-ptr si) rax)]
+     (add (stack-ptr si) scratch)]
     [(-)
      (prep-binary-call x si env)
-     (sub (stack-ptr si) rax)]
+     (sub (stack-ptr si) scratch)]
     [(*)
      (prep-binary-call x si env)
-     (shr fixnum-shift rax)
+     (shr fixnum-shift scratch)
      (shr fixnum-shift (stack-ptr si))
-     (imul (stack-ptr si) rax)
-     (shl fixnum-shift rax)]
+     (imul (stack-ptr si) scratch)
+     (shl fixnum-shift scratch)]
     [(=)
      (prep-binary-call x si env)
-     (cmp (stack-ptr si) rax)
-     (mov 0 rax)
+     (cmp (stack-ptr si) scratch)
+     (mov 0 scratch)
      (sete al)
-     (sal boolean-shift rax)
-     (or! boolean-tag rax)]
+     (sal boolean-shift scratch)
+     (or! boolean-tag scratch)]
     [(<)
      (prep-binary-call x si env)
-     (cmp (stack-ptr si) rax)
-     (mov 0 rax)
+     (cmp (stack-ptr si) scratch)
+     (mov 0 scratch)
      (setl al)
-     (sal boolean-shift rax)
-     (or! boolean-tag rax)]
+     (sal boolean-shift scratch)
+     (or! boolean-tag scratch)]
     [(add1)
      (emit-expr (primcall-operand1 x) si env)
-     (add (immediate-rep 1) rax)]
+     (add (immediate-rep 1) scratch)]
     [(sub1)
      (emit-expr (primcall-operand1 x) si env)
-     (sub (immediate-rep 1) rax)]
+     (sub (immediate-rep 1) scratch)]
     [(integer->char)
      (emit-expr (primcall-operand1 x) si env)
-     (shl (- char-shift fixnum-shift) rax)
-     (or! char-tag rax)]
+     (shl (- char-shift fixnum-shift) scratch)
+     (or! char-tag scratch)]
     [(char->integer)
      (emit-expr (primcall-operand1 x) si env)
-     (shr (- char-shift fixnum-shift) rax)]
+     (shr (- char-shift fixnum-shift) scratch)]
     [(zero?)
      (emit-expr (primcall-operand1 x) si env)
-     (cmp 0 rax)
-     (mov 0 rax)
+     (cmp 0 scratch)
+     (mov 0 scratch)
      (sete al)
-     (sal boolean-shift rax)
-     (or! boolean-tag rax)]
+     (sal boolean-shift scratch)
+     (or! boolean-tag scratch)]
     [(integer?)
      (emit-expr (primcall-operand1 x) si env)
-     (and! fixnum-mask rax)
-     (cmp fixnum-tag rax)
-     (mov 0 rax)
+     (and! fixnum-mask scratch)
+     (cmp fixnum-tag scratch)
+     (mov 0 scratch)
      (sete al)
-     (sal boolean-shift rax)
-     (or! boolean-tag rax)]
+     (sal boolean-shift scratch)
+     (or! boolean-tag scratch)]
     [(boolean?)
      (emit-expr (primcall-operand1 x) si env)
-     (and! boolean-mask rax)
-     (cmp boolean-tag rax)
-     (mov 0 rax)
+     (and! boolean-mask scratch)
+     (cmp boolean-tag scratch)
+     (mov 0 scratch)
      (sete al)
-     (sal boolean-shift rax)
-     (or! boolean-tag rax)]))
+     (sal boolean-shift scratch)
+     (or! boolean-tag scratch)]))
 
 (define (let? x) (eq? (first x) 'let))
 (define (bindings x) (second x))
@@ -197,10 +222,10 @@ END
       [else
         (let [(b (first b*))]
           (emit-expr (rhs b) si env)
-          (mov rax (stack-ptr si))
+          (mov scratch (stack-ptr si))
           (f (rest b*)
              (extend-env (lhs b) si new-env)
-             (- si word-size)))])))
+             (- si (word-size))))])))
 
 (define heap-register 'rdi)
 (define (heap-ptr offset)
@@ -208,50 +233,69 @@ END
 
 (define (emit-cons head tail si env)
   (emit-expr head si env (heap-ptr 0))
-  (emit-expr tail si env (heap-ptr word-size))
-  (mov heap-register rax)
-  (or pair-tag rax)
-  (add (* 2 word-size) heap-register))
+  (emit-expr tail si env (heap-ptr (word-size)))
+  (mov heap-register scratch)
+  (or pair-tag scratch)
+  (add (* 2 (word-size)) heap-register))
 
 (define (cons-call? x) (eq? (first x) 'cons))
 (define (cons-head x) (first (rest x)))
 (define (cons-tail x) (second (rest x)))
 
-(define (emit-expr x si env [dest rax])
-  (cond
-    [(immediate? x)
-     (mov (immediate-rep x) dest)]
-    [(variable? x)
-     (mov (stack-ptr (lookup x env)) rax)]
-    [(let? x)
-     (emit-let (bindings x) (body x) si env)]
-    [(if? x)
-     (emit-if (if-test x) (if-conseq x) (if-altern x) si env)]
-    [(primcall? x)
-     (emit-primitive-call x si env)]
-    [(cons-call? x)
-     (emit-cons (cons-head x) (cons-tail x) si env)]
-    [else
-      (error (format "don't know how to emit expression \"~a\"" (value->string x)))]))
+(define (emit-expr x si env [dest #f])
+  (let ([dest (or dest scratch)])
+    (cond
+      [(immediate? x)
+       (mov (immediate-rep x) dest)]
+      [(variable? x)
+       (mov (stack-ptr (lookup x env)) scratch)]
+      [(let? x)
+       (emit-let (bindings x) (body x) si env)]
+      [(if? x)
+       (emit-if (if-test x) (if-conseq x) (if-altern x) si env)]
+      [(primcall? x)
+       (emit-primitive-call x si env)]
+      [(cons-call? x)
+       (emit-cons (cons-head x) (cons-tail x) si env)]
+      [else
+        (error (format "don't know how to emit expression \"~a\"" (value->string x)))])))
 
 (define size-suffixes
   '((x86 "l")
     (x86_64 "q")))
 
-(define (assemble-sources expr filename architecture)
-  (let ([stack-index (- word-size)]
+(define word-sizes
+  '((x86 4)
+    (x86_64 8)))
+
+(define scratch-registers
+  '((x86 eax)
+    (x86_64 rax)))
+
+(define stack-registers
+  '((x86 esp)
+    (x86_64 rsp)))
+
+(define (assemble-sources expr filename)
+  (let ([stack-index (- (word-size))]
         [env (hash)])
     (emit-header filename)
     (emit-expr expr stack-index env)
     (ret)))
 
-(define (compile-program x filename output)
+(define (compile-program x filename output [arch 'x86_64])
   (define (emit-assembly)
     (with-output-to-string
       (lambda ()
-        (let ([size-suffix (second (assoc 'x86_64 size-suffixes))])
-            (parameterize ([current-size-suffix size-suffix])
-                (assemble-sources x filename 'x86))))))
+        (let ([size-suffix (second (assoc arch size-suffixes))]
+              [word-size* (second (assoc arch word-sizes))]
+              [scratch-reg (second (assoc arch scratch-registers))]
+              [stack-reg (second (assoc arch stack-registers))])
+            (parameterize ([current-size-suffix size-suffix]
+                           [word-size word-size*]
+                           [scratch-register scratch-reg]
+                           [stack-register-param stack-reg])
+                (assemble-sources x filename))))))
 
   (let [(assembly (emit-assembly))]
     (with-output-to-file output
@@ -265,15 +309,15 @@ END
   (when (not (system cmd))
     (error (format "command exited with error: ~a" cmd))))
 
-(define (link assembly)
+(define (link assembly arch)
   (let [(tmp-file (path->string (make-temporary-file)))]
-    (system-check (format "gcc -O3 driver.c aux.c ~a -o ~a" assembly tmp-file))
+    (system-check (compile-cmd assembly tmp-file arch))
     tmp-file))
 
-(define (compile-and-exec program filename)
+(define (compile-and-exec program filename [arch 'x86_64])
   (let [(tmp-file (path->string (make-temporary-file "~a.s")))]
-    (compile-program program filename tmp-file)
-    (let [(exe (link tmp-file))]
+    (compile-program program filename tmp-file arch)
+    (let [(exe (link tmp-file arch))]
       (string-trim (with-output-to-string
         (lambda ()
           (system-check exe)))))))
