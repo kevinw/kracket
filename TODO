@@ -1,0 +1,6 @@
+# TODO
+
+- get an ARM test path working with qemu
+- get an xcode project with code actually running on a physical iphone
+- closures, etc. continue "an incremental approach to compiler construction"
+- start sketching out the simplification of semantics that will make up the "schemelike"
