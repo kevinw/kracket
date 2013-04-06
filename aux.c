@@ -12,7 +12,7 @@ static void strreverse(char* begin, char* end) {
 static void itoa(intptr_t value, char* str, int base) {
 	static char num[] = "0123456789abcdefghijklmnopqrstuvwxyz";
 	char* wstr=str;
-	int sign;
+	intptr_t sign;
 	div_t res;
 
 	// Validate base
@@ -25,7 +25,7 @@ static void itoa(intptr_t value, char* str, int base) {
 	do {
 		res = div(value, base);
 		*wstr++ = num[res.rem];
-	} while(value=res.quot);
+	} while((value=res.quot));
 	if (sign < 0) *wstr++='-';
 	*wstr = '\0';
 

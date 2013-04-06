@@ -4,29 +4,39 @@
 
 (require "assembler.rkt")
 
-(define gcc-arch-flags
-  '((x86 "i386")
-    (x86_64 "x86_64")))
-
-(define (compile-cmd input output arch)
-  ; Returns the GCC command to link together a complete progam.
-  (let ([gcc-arch-flag (second (assoc arch gcc-arch-flags))])
-    (format "gcc -arch ~a -g -O3 driver.c aux.c ~a -o ~a" gcc-arch-flag input output)))
-
 (define eax 'eax)
 (define rax 'rax)
 (define al  'al)
 (define rsp 'rsp)
 
-(define word-size (make-parameter 8))
+(struct arch (size-suffix word-size scratch-register stack-register gcc-arch) #:transparent)
+(define architectures
+  (list
+    (list 'x86    (arch "l" 4 'eax 'esp "i386"))
+    (list 'x86_64 (arch "q" 8 'rax 'rsp "x86_64"))))
 
+(define word-size (make-parameter 8))
 (define scratch-register (make-parameter rax))
+(define stack-register-param (make-parameter rsp))
+
+(define (arch-parameterize arch cb)
+  (let ([arch (second (assoc arch architectures))])
+    (parameterize ([current-size-suffix (arch-size-suffix arch)]
+                   [word-size (arch-word-size arch)]
+                   [scratch-register (arch-scratch-register arch)]
+                   [stack-register-param (arch-stack-register arch)])
+      (cb))))
+
+(define (compile-cmd input output arch)
+  ; Returns the GCC command to link together a complete progam.
+  (define gcc-arch-flag (arch-gcc-arch (second (assoc arch architectures))))
+  (define CFLAGS (format "-Wall -arch ~a -g -O3" gcc-arch-flag))
+
+  (format "gcc ~a driver.c aux.c ~a -o ~a" CFLAGS input output))
 
 (define-syntax scratch
   (syntax-id-rules ()
     [scratch (scratch-register)]))
-
-(define stack-register-param (make-parameter rsp))
 
 (define-syntax stack-register
   (syntax-id-rules ()
@@ -260,22 +270,6 @@ END
       [else
         (error (format "don't know how to emit expression \"~a\"" (value->string x)))])))
 
-(define size-suffixes
-  '((x86 "l")
-    (x86_64 "q")))
-
-(define word-sizes
-  '((x86 4)
-    (x86_64 8)))
-
-(define scratch-registers
-  '((x86 eax)
-    (x86_64 rax)))
-
-(define stack-registers
-  '((x86 esp)
-    (x86_64 rsp)))
-
 (define (assemble-sources expr filename)
   (let ([stack-index (- (word-size))]
         [env (hash)])
@@ -287,15 +281,9 @@ END
   (define (emit-assembly)
     (with-output-to-string
       (lambda ()
-        (let ([size-suffix (second (assoc arch size-suffixes))]
-              [word-size* (second (assoc arch word-sizes))]
-              [scratch-reg (second (assoc arch scratch-registers))]
-              [stack-reg (second (assoc arch stack-registers))])
-            (parameterize ([current-size-suffix size-suffix]
-                           [word-size word-size*]
-                           [scratch-register scratch-reg]
-                           [stack-register-param stack-reg])
-                (assemble-sources x filename))))))
+        (arch-parameterize arch
+          (lambda ()
+            (assemble-sources x filename))))))
 
   (let [(assembly (emit-assembly))]
     (with-output-to-file output
