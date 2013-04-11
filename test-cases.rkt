@@ -1,22 +1,36 @@
 #lang racket
 
-(require rackunit "compiler.rkt")
+(require
+  rackunit
+  "compiler.rkt")
+
+(define (check-prog-output program arch expected)
+  (let [(tmp-file (path->string (make-temporary-file "~a.s")))]
+    (compile-program program "test-program" tmp-file arch)
+    (with-check-info
+      (['assembly tmp-file]
+       ['arch arch]
+       ['program (value->string program)])
+
+      (check-not-exn
+        (lambda ()
+          (check-equal?
+            expected
+            (let [(exe (link tmp-file arch))]
+              (string-trim (with-output-to-string
+                (lambda ()
+                  (check-true (system exe) "executable did not return 0")))))))))))
 
 (define (check-prog program expected-output)
-  (let [(program-output-32 (compile-and-exec program "test-program" 'x86))
-        (program-output-64 (compile-and-exec program "test-program" 'x86_64))
-        (program-as-string (with-output-to-string (lambda () (write program))))]
+  (define program-string (with-output-to-string (lambda () (write program))))
 
-    (check-equal?
-      program-output-32
-      expected-output
-      (format "program text: ~a" program-as-string))
+  (test-begin
+    (check-prog-output program 'x86 expected-output)
+    (check-prog-output program 'x86_64 expected-output)))
 
-    (check-equal?
-      program-output-64
-      expected-output
-      (format "program text: ~a" program-as-string))))
-
+;(define compiler-tests
+  ;(test-suite
+    ;"Tests for the compiler"
 
 (test-case
   "Primitives"
@@ -106,3 +120,13 @@
                  99)
               "42"))
 
+(test-case
+  "Cons"
+
+  ;(check-prog '(cons 10 20) "(10 . 20)"))
+  (check-prog '(foo 123))
+
+;))
+
+;(require rackunit/text-ui)
+;(run-tests compiler-tests 'verbose)

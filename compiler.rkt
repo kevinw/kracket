@@ -2,29 +2,41 @@
 
 (require racket/system)
 
+(define default-arch 'x86_64)
+
 (require "assembler.rkt")
 
+; TODO: make define-registers
+
+(define esi 'esi)
+(define esp 'esp)
+(define ebp 'ebp)
+(define edi 'edi)
 (define eax 'eax)
 (define rax 'rax)
 (define al  'al)
 (define rsp 'rsp)
 
-(struct arch (size-suffix word-size scratch-register stack-register gcc-arch) #:transparent)
+(struct arch (size-suffix word-size scratch-register stack-register heap-register gcc-arch) #:transparent)
 (define architectures
   (list
-    (list 'x86    (arch "l" 4 'eax 'esp "i386"))
-    (list 'x86_64 (arch "q" 8 'rax 'rsp "x86_64"))))
+    (list 'x86    (arch "l" 4 'eax 'esp 'esi "i386"))
+    (list 'x86_64 (arch "q" 8 'rax 'rsp 'rdi "x86_64"))))
 
+(define current-arch (make-parameter default-arch))
 (define word-size (make-parameter 8))
 (define scratch-register (make-parameter rax))
 (define stack-register-param (make-parameter rsp))
+(define heap-register-param (make-parameter 'rdi))
 
 (define (arch-parameterize arch cb)
   (let ([arch (second (assoc arch architectures))])
-    (parameterize ([current-size-suffix (arch-size-suffix arch)]
+    (parameterize ([current-arch arch]
+                   [current-size-suffix (arch-size-suffix arch)]
                    [word-size (arch-word-size arch)]
                    [scratch-register (arch-scratch-register arch)]
-                   [stack-register-param (arch-stack-register arch)])
+                   [stack-register-param (arch-stack-register arch)]
+                   [heap-register-param (arch-heap-register arch)])
       (cb))))
 
 (define (compile-cmd input output arch)
@@ -34,16 +46,18 @@
 
   (format "gcc ~a driver.c aux.c ~a -o ~a" CFLAGS input output))
 
-(define-syntax scratch
-  (syntax-id-rules ()
-    [scratch (scratch-register)]))
+; define syntax shortcuts for accessing parameters like they were just identifiers
+(define-syntax-rule (define-param-id <id> <param>)
+  (define-syntax <id>
+    (syntax-id-rules ()
+      [<id> (<param>)])))
 
-(define-syntax stack-register
-  (syntax-id-rules ()
-    [stack-register (stack-register-param)]))
+(define-param-id scratch scratch-register)
+(define-param-id stack-register stack-register-param)
+(define-param-id heap-register heap-register-param)
 
-(define (stack-ptr index)
-  (format "~a(%~a)" index stack-register))
+(define (stack-ptr index) (format "~a(%~a)" index stack-register))
+(define (heap-ptr offset) (format "~a(%~a)" offset (symbol->string heap-register)))
 
 (define shift arithmetic-shift)
 
@@ -237,15 +251,11 @@ END
              (extend-env (lhs b) si new-env)
              (- si (word-size))))])))
 
-(define heap-register 'rdi)
-(define (heap-ptr offset)
-  (format "~a(%~a)" offset (symbol->string heap-register)))
-
 (define (emit-cons head tail si env)
   (emit-expr head si env (heap-ptr 0))
   (emit-expr tail si env (heap-ptr (word-size)))
   (mov heap-register scratch)
-  (or pair-tag scratch)
+  (or! pair-tag scratch)
   (add (* 2 (word-size)) heap-register))
 
 (define (cons-call? x) (eq? (first x) 'cons))
@@ -270,14 +280,29 @@ END
       [else
         (error (format "don't know how to emit expression \"~a\"" (value->string x)))])))
 
+(define (preserve-registers proc)
+  (if (equal? current-arch 'x86)
+    (begin
+      (push ebp)
+      (mov esp ebp)
+      (push esi)
+      (mov (offset 8 ebp) esi) ; first param is heap
+      (mov 
+      (proc)
+      (pop esi)
+      (pop ebp)))
+    (proc)))
+
 (define (assemble-sources expr filename)
   (let ([stack-index (- (word-size))]
         [env (hash)])
-    (emit-header filename)
-    (emit-expr expr stack-index env)
-    (ret)))
+        (emit-header filename)
+        (preserve-registers
+          (lambda ()
+            (emit-expr expr stack-index env)))
+        (ret)))
 
-(define (compile-program x filename output [arch 'x86_64])
+(define (compile-program x filename output [arch default-arch])
   (define (emit-assembly)
     (with-output-to-string
       (lambda ()
@@ -290,8 +315,9 @@ END
       #:exists 'replace
       (lambda () (display assembly)))))
 
-(define (compile-file filename output)
-  (compile-program (file->value filename) filename output))
+(define (compile-file filename output arch)
+  (printf "compile-file ~a\n" arch)
+  (compile-program (file->value filename) filename output arch))
 
 (define (system-check cmd)
   (when (not (system cmd))
@@ -302,18 +328,12 @@ END
     (system-check (compile-cmd assembly tmp-file arch))
     tmp-file))
 
-(define (compile-and-exec program filename [arch 'x86_64])
-  (let [(tmp-file (path->string (make-temporary-file "~a.s")))]
-    (compile-program program filename tmp-file arch)
-    (let [(exe (link tmp-file arch))]
-      (string-trim (with-output-to-string
-        (lambda ()
-          (system-check exe)))))))
-
 (let [(args (current-command-line-arguments))]
   (when (> (vector-length args) 0)
-    (let [(input-filename (vector-ref args 0))
-          (output-filename (vector-ref args 1))]
-       (compile-file input-filename output-filename))))
+    (let ([input-filename (vector-ref args 0)]
+          [output-filename (vector-ref args 1)]
+          [arch (if (> (vector-length args) 2) (string->symbol (vector-ref args 2)) default-arch)])
+       (printf "ARCH ~a len: ~a\n" arch (vector-length args))
+       (compile-file input-filename output-filename arch))))
 
-(provide compile-and-exec compile-file link immediate? emit-expr primcall?)
+(provide value->string system-check default-arch compile-program compile-file link immediate? emit-expr primcall?)

@@ -1,5 +1,8 @@
-./a.out
-./output.s
+output32.s
+output64.s
+
+a32.out
+a64.out
 *.rkt~
 
 #################

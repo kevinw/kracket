@@ -1,6 +1,6 @@
 #lang racket
 
-(provide emit emit-no-tab dest-as-string current-size-suffix)
+(provide offset emit emit-no-tab dest-as-string current-size-suffix)
 
 (define current-size-suffix (make-parameter "l"))
 
@@ -14,8 +14,14 @@
     (printf "\t")
     (apply emit-no-tab args)))
 
+(struct offset (register bytes))
+
+(define (offset-as-string offset)
+  (format "~a(%~a)" (offset-bytes offset) (offset-register offset)))
+
 (define (dest-as-string dest)
   (cond
+    [(offset? dest) (offset-as-string dest)]
     [(string? dest) dest]
     [(symbol? dest) (format "%~a" (symbol->string dest))]
     [else (error "unknown target" dest)]))
@@ -73,6 +79,12 @@
 
 (define (setl dest) (emit "setl ~a" (dest-as-string dest)))
 (provide setl)
+
+(define (push src) (emit "~a ~a" (with-size-suffix "push") (src-as-string src)))
+(provide push)
+
+(define (pop dest) (emit "~a ~a" (with-size-suffix "pop") (dest-as-string dest)))
+(provide pop)
 
 #|
 (define-syntax-rule (mov src dest)
