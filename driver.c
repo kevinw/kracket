@@ -4,6 +4,8 @@
 #include "binary.h"
 #include "aux.h"
 
+#define DRIVER_DEBUG 0
+
 #define fixnum_mask     B8(00000011)
 #define fixnum_tag      B8(00000000)
 #define fixnum_shift    2
@@ -68,6 +70,10 @@ int main(int argc, char**argv) {
         fprintf(stderr, "could not pre-allocate heap");
         return 1;
     }
+
+#if DRIVER_DEBUG
+    printf("HEAP PTR %p\n", heap);
+#endif
 
     scheme_val val = scheme_entry(heap);
 

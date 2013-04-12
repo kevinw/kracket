@@ -123,9 +123,7 @@
 (test-case
   "Cons"
 
-  ;(check-prog '(cons 10 20) "(10 . 20)"))
-  (check-prog '(foo 123))
-
+  (check-prog '(cons 10 20) "(10 . 20)"))
 ;))
 
 ;(require rackunit/text-ui)

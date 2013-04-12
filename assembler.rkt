@@ -14,7 +14,7 @@
     (printf "\t")
     (apply emit-no-tab args)))
 
-(struct offset (register bytes))
+(struct offset (bytes register))
 
 (define (offset-as-string offset)
   (format "~a(%~a)" (offset-bytes offset) (offset-register offset)))

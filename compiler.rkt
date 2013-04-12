@@ -14,26 +14,26 @@
 (define edi 'edi)
 (define eax 'eax)
 (define rax 'rax)
-(define al  'al)
 (define rsp 'rsp)
+(define al  'al)
 
-(struct arch (size-suffix word-size scratch-register stack-register heap-register gcc-arch) #:transparent)
+(struct arch (name size-suffix word-size scratch-register stack-register heap-register gcc-arch) #:transparent)
 (define architectures
   (list
-    (list 'x86    (arch "l" 4 'eax 'esp 'esi "i386"))
-    (list 'x86_64 (arch "q" 8 'rax 'rsp 'rdi "x86_64"))))
+    (list 'x86    (arch "x86"    "l" 4 'eax 'esp 'esi "i386"))
+    (list 'x86_64 (arch "x86_64" "q" 8 'rax 'rsp 'rdi "x86_64"))))
 
-(define current-arch (make-parameter default-arch))
-(define word-size (make-parameter 8))
+(define current-arch-param (make-parameter default-arch))
+(define word-size-param (make-parameter 8))
 (define scratch-register (make-parameter rax))
 (define stack-register-param (make-parameter rsp))
 (define heap-register-param (make-parameter 'rdi))
 
 (define (arch-parameterize arch cb)
   (let ([arch (second (assoc arch architectures))])
-    (parameterize ([current-arch arch]
+    (parameterize ([current-arch-param arch]
                    [current-size-suffix (arch-size-suffix arch)]
-                   [word-size (arch-word-size arch)]
+                   [word-size-param (arch-word-size arch)]
                    [scratch-register (arch-scratch-register arch)]
                    [stack-register-param (arch-stack-register arch)]
                    [heap-register-param (arch-heap-register arch)])
@@ -52,6 +52,8 @@
     (syntax-id-rules ()
       [<id> (<param>)])))
 
+(define-param-id current-arch current-arch-param)
+(define-param-id word-size word-size-param)
 (define-param-id scratch scratch-register)
 (define-param-id stack-register stack-register-param)
 (define-param-id heap-register heap-register-param)
@@ -142,7 +144,7 @@ END
   (mov scratch (stack-ptr si))
   (emit-expr
     (primcall-operand1 x)
-    (- si (word-size))
+    (- si word-size)
     env))
 
 (define unique-label
@@ -249,14 +251,14 @@ END
           (mov scratch (stack-ptr si))
           (f (rest b*)
              (extend-env (lhs b) si new-env)
-             (- si (word-size))))])))
+             (- si word-size)))])))
 
 (define (emit-cons head tail si env)
   (emit-expr head si env (heap-ptr 0))
-  (emit-expr tail si env (heap-ptr (word-size)))
+  (emit-expr tail si env (heap-ptr word-size))
   (mov heap-register scratch)
   (or! pair-tag scratch)
-  (add (* 2 (word-size)) heap-register))
+  (add (* 2 word-size) heap-register))
 
 (define (cons-call? x) (eq? (first x) 'cons))
 (define (cons-head x) (first (rest x)))
@@ -280,24 +282,27 @@ END
       [else
         (error (format "don't know how to emit expression \"~a\"" (value->string x)))])))
 
-(define (preserve-registers proc)
-  (if (equal? current-arch 'x86)
+(define (setup-stack-frame proc)
+  (define (arg n) ; 32 bit
+    (offset (+ word-size (* word-size n)) ebp))
+
+  ; (emit "# ARCH ~a" current-arch)
+  (if (equal? (arch-name current-arch) "x86")
     (begin
       (push ebp)
       (mov esp ebp)
       (push esi)
-      (mov (offset 8 ebp) esi) ; first param is heap
-      (mov 
+      (mov (arg 1) esi) ; first param is heap pointer passed into scheme_entry
       (proc)
       (pop esi)
-      (pop ebp)))
+      (pop ebp))
     (proc)))
 
 (define (assemble-sources expr filename)
-  (let ([stack-index (- (word-size))]
+  (let ([stack-index (- word-size)]
         [env (hash)])
         (emit-header filename)
-        (preserve-registers
+        (setup-stack-frame
           (lambda ()
             (emit-expr expr stack-index env)))
         (ret)))

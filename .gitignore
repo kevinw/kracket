@@ -1,5 +1,6 @@
 output32.s
 output64.s
+*.o
 
 a32.out
 a64.out
