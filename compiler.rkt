@@ -129,7 +129,8 @@ END
 
 (define (primcall? x)
   (member (first x)
-    '(add1 sub1 integer->char char->integer zero? integer? boolean? + - * = <)))
+    '(add1 sub1 integer->char char->integer zero? integer? boolean?
+      + - * = < car cdr)))
 
 (define (primcall-op x) (first x))
 (define (primcall-operand1 x) (second x))
@@ -237,7 +238,13 @@ END
      (mov 0 scratch)
      (sete al)
      (sal boolean-shift scratch)
-     (or! boolean-tag scratch)]))
+     (or! boolean-tag scratch)]
+    [(car)
+     (emit-expr (primcall-operand1 x) si env)
+     (mov (offset -1 scratch) scratch)]
+    [(cdr)
+     (emit-expr (primcall-operand1 x) si env)
+     (mov (offset (- word-size 1) scratch) scratch)]))
 
 (define (let? x) (eq? (first x) 'let))
 (define (bindings x) (second x))

@@ -129,6 +129,12 @@
 
   (check-prog '(cons 10 20) "(10 . 20)"))
   (check-prog '(cons 10 (cons 20 30)) "(10 . (20 . 30))")
+
+(test-case
+  "Car/Cdr"
+
+  (check-prog '(car (cons 10 20)) "10")
+  (check-prog '(cdr (cons 10 20)) "20"))
 ;))
 
 ;(require rackunit/text-ui)
