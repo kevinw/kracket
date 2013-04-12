@@ -1,6 +1,6 @@
 #lang racket
 
-(provide offset emit emit-no-tab dest-as-string current-size-suffix)
+(provide debug-emit offset offset-as-string emit emit-no-tab dest-as-string current-size-suffix)
 
 (define current-size-suffix (make-parameter "l"))
 
@@ -13,6 +13,8 @@
   (lambda args
     (printf "\t")
     (apply emit-no-tab args)))
+
+(define debug-emit emit)
 
 (struct offset (bytes register))
 

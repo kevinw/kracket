@@ -39,7 +39,7 @@ $(BIN): $(ASSEMBLYOBJ) driver.c aux.c
 .PHONY: clean run test run32
 
 clean: 
-	rm -f $(ASSEMBLY) $(ASSEMBLY32) $(BIN) $(BIN32)
+	rm -f $(ASSEMBLY) $(ASSEMBLY32) $(ASSEMBLYOBJ) $(ASSEMBLYOBJ32) $(BIN) $(BIN32)
 
 run: all
 	./$(BIN)

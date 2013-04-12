@@ -2,6 +2,16 @@
 
 (require racket/system)
 
+(provide value->string
+         system-check
+         default-arch
+         compile-program
+         compile-file
+         link
+         immediate?
+         emit-expr
+         primcall?)
+
 (define default-arch 'x86_64)
 
 (require "assembler.rkt")
@@ -59,7 +69,6 @@
 (define-param-id heap-register heap-register-param)
 
 (define (stack-ptr index) (format "~a(%~a)" index stack-register))
-(define (heap-ptr offset) (format "~a(%~a)" offset (symbol->string heap-register)))
 
 (define shift arithmetic-shift)
 
@@ -254,8 +263,11 @@ END
              (- si word-size)))])))
 
 (define (emit-cons head tail si env)
-  (emit-expr head si env (heap-ptr 0))
-  (emit-expr tail si env (heap-ptr word-size))
+  (emit-expr head si env)
+  (push scratch)
+  (emit-expr tail si env)
+  (mov scratch (offset word-size heap-register))
+  (pop (offset 0 heap-register))
   (mov heap-register scratch)
   (or! pair-tag scratch)
   (add (* 2 word-size) heap-register))
@@ -265,6 +277,7 @@ END
 (define (cons-tail x) (second (rest x)))
 
 (define (emit-expr x si env [dest #f])
+  (emit "# START ~a" (value->string x))
   (let ([dest (or dest scratch)])
     (cond
       [(immediate? x)
@@ -280,13 +293,13 @@ END
       [(cons-call? x)
        (emit-cons (cons-head x) (cons-tail x) si env)]
       [else
-        (error (format "don't know how to emit expression \"~a\"" (value->string x)))])))
+        (error (format "don't know how to emit expression \"~a\"" (value->string x)))]))
+
+  (emit "# END ~a" (value->string x)))
 
 (define (setup-stack-frame proc)
   (define (arg n) ; 32 bit
     (offset (+ word-size (* word-size n)) ebp))
-
-  ; (emit "# ARCH ~a" current-arch)
   (if (equal? (arch-name current-arch) "x86")
     (begin
       (push ebp)
@@ -301,11 +314,11 @@ END
 (define (assemble-sources expr filename)
   (let ([stack-index (- word-size)]
         [env (hash)])
-        (emit-header filename)
-        (setup-stack-frame
-          (lambda ()
-            (emit-expr expr stack-index env)))
-        (ret)))
+    (emit-header filename)
+    (setup-stack-frame
+      (lambda ()
+        (emit-expr expr stack-index env)))
+    (ret)))
 
 (define (compile-program x filename output [arch default-arch])
   (define (emit-assembly)
@@ -321,7 +334,6 @@ END
       (lambda () (display assembly)))))
 
 (define (compile-file filename output arch)
-  (printf "compile-file ~a\n" arch)
   (compile-program (file->value filename) filename output arch))
 
 (define (system-check cmd)
@@ -338,7 +350,5 @@ END
     (let ([input-filename (vector-ref args 0)]
           [output-filename (vector-ref args 1)]
           [arch (if (> (vector-length args) 2) (string->symbol (vector-ref args 2)) default-arch)])
-       (printf "ARCH ~a len: ~a\n" arch (vector-length args))
        (compile-file input-filename output-filename arch))))
 
-(provide value->string system-check default-arch compile-program compile-file link immediate? emit-expr primcall?)

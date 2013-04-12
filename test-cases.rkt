@@ -2,7 +2,8 @@
 
 (require
   rackunit
-  "compiler.rkt")
+  "compiler.rkt"
+  "assembler.rkt")
 
 (define (check-prog-output program arch expected)
   (let [(tmp-file (path->string (make-temporary-file "~a.s")))]
@@ -17,9 +18,12 @@
           (check-equal?
             expected
             (let [(exe (link tmp-file arch))]
-              (string-trim (with-output-to-string
-                (lambda ()
-                  (check-true (system exe) "executable did not return 0")))))))))))
+              (with-check-info
+                (['exe exe])
+
+                (string-trim (with-output-to-string
+                  (lambda ()
+                    (check-true (system exe) "executable did not return 0"))))))))))))
 
 (define (check-prog program expected-output)
   (define program-string (with-output-to-string (lambda () (write program))))
@@ -124,6 +128,7 @@
   "Cons"
 
   (check-prog '(cons 10 20) "(10 . 20)"))
+  (check-prog '(cons 10 (cons 20 30)) "(10 . (20 . 30))")
 ;))
 
 ;(require rackunit/text-ui)
