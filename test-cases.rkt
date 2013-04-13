@@ -134,7 +134,19 @@
   "Car/Cdr"
 
   (check-prog '(car (cons 10 20)) "10")
-  (check-prog '(cdr (cons 10 20)) "20"))
+  (check-prog '(cdr (cons 10 20)) "20")
+  (check-prog '(pair? (cons 1 2)) "#t")
+  (check-prog '(pair? 1) "#f")
+  (check-prog '(pair? #\c) "#f"))
+
+(test-case
+  "Vectors"
+
+  (check-prog '(make-vector 1) "#(0)")
+  (check-prog '(vector? (make-vector 1)) "#t")
+  (check-prog '(vector? #f) "#f")
+  (check-prog '(vector? 5) "#f"))
+
 ;))
 
 ;(require rackunit/text-ui)

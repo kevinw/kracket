@@ -21,7 +21,6 @@
 #define empty_list      B8(00101111)
 
 #define heap_mask       B8(00000111)
-
 #define pair_tag        B8(00000001)
 #define vector_tag      B8(00000010)
 #define string_tag      B8(00000011)
@@ -38,9 +37,11 @@
 
 scheme_val scheme_entry();
 
+#define UNPACK_FIXNUM(a) (a >> fixnum_shift)
+
 void print_value(scheme_val val, int* return_code) {
     if ((val & fixnum_mask) == fixnum_tag) {
-        printf("%" PRIiPTR, val >> fixnum_shift);
+        printf("%" PRIiPTR, UNPACK_FIXNUM(val));
     } else if ((val & char_mask) == char_tag) {
         unsigned char c = val >> char_shift;
         printf("%c", c);
@@ -56,6 +57,16 @@ void print_value(scheme_val val, int* return_code) {
         print_value(*head, return_code);
         printf(" . ");
         print_value(*tail, return_code);
+        printf(")");
+    } else if ((val & heap_mask) == vector_tag) {
+        printf("#(");
+        size_t* v = (size_t*)(val & ~heap_mask);
+        size_t vectorLength = UNPACK_FIXNUM(*v);
+        for (int i = 0; i < vectorLength; ++i) {
+            if (i > 0)
+                printf(" ");
+            printf("%zu", v[i+1]);
+        }
         printf(")");
     } else {
         printf("got unknown value %zu: ", val);

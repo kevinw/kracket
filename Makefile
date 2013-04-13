@@ -2,8 +2,8 @@ CC=gcc
 
 SCHEME=mzscheme
 
-CFLAGS=-g -O3
-CFLAGS32=-g -O3 -arch i386
+CFLAGS=-std=c99 -Wall -g -O3
+CFLAGS32=$(CFLAGS) -arch i386
 
 BIN=a64.out
 ASSEMBLY=output64.s
@@ -12,7 +12,6 @@ ASSEMBLYOBJ=output64.o
 BIN32=a32.out
 ASSEMBLY32=output32.s
 ASSEMBLYOBJ32=output32.o
-
 
 all: $(ASSEMBLY) $(BIN)
 

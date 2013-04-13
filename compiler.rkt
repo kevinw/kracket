@@ -27,15 +27,16 @@
 (define rsp 'rsp)
 (define al  'al)
 
-(struct arch (name size-suffix word-size scratch-register stack-register heap-register gcc-arch) #:transparent)
+(struct arch (name size-suffix word-size scratch-register scratch-2-register stack-register heap-register gcc-arch) #:transparent)
 (define architectures
   (list
-    (list 'x86    (arch "x86"    "l" 4 'eax 'esp 'esi "i386"))
-    (list 'x86_64 (arch "x86_64" "q" 8 'rax 'rsp 'rdi "x86_64"))))
+    (list 'x86    (arch "x86"    "l" 4 'eax 'ebx 'esp 'esi "i386"))
+    (list 'x86_64 (arch "x86_64" "q" 8 'rax 'rbx 'rsp 'rdi "x86_64"))))
 
 (define current-arch-param (make-parameter default-arch))
 (define word-size-param (make-parameter 8))
 (define scratch-register (make-parameter rax))
+(define scratch-2-register (make-parameter 'rbx))
 (define stack-register-param (make-parameter rsp))
 (define heap-register-param (make-parameter 'rdi))
 
@@ -45,6 +46,7 @@
                    [current-size-suffix (arch-size-suffix arch)]
                    [word-size-param (arch-word-size arch)]
                    [scratch-register (arch-scratch-register arch)]
+                   [scratch-2-register (arch-scratch-2-register arch)]
                    [stack-register-param (arch-stack-register arch)]
                    [heap-register-param (arch-heap-register arch)])
       (cb))))
@@ -52,7 +54,7 @@
 (define (compile-cmd input output arch)
   ; Returns the GCC command to link together a complete progam.
   (define gcc-arch-flag (arch-gcc-arch (second (assoc arch architectures))))
-  (define CFLAGS (format "-Wall -arch ~a -g -O3" gcc-arch-flag))
+  (define CFLAGS (format "-std=c99 -Wall -g -O3 -arch ~a" gcc-arch-flag)) ; TODO: parse this from the Makefile? emit the makefile?
 
   (format "gcc ~a driver.c aux.c ~a -o ~a" CFLAGS input output))
 
@@ -65,6 +67,7 @@
 (define-param-id current-arch current-arch-param)
 (define-param-id word-size word-size-param)
 (define-param-id scratch scratch-register)
+(define-param-id scratch-2 scratch-2-register)
 (define-param-id stack-register stack-register-param)
 (define-param-id heap-register heap-register-param)
 
@@ -93,7 +96,6 @@
 (define empty-list      #b00101111)
 
 (define heap-mask       #b00000111)
-
 (define pair-tag        #b00000001)
 (define vector-tag      #b00000010)
 (define string-tag      #b00000011)
@@ -130,7 +132,7 @@ END
 (define (primcall? x)
   (member (first x)
     '(add1 sub1 integer->char char->integer zero? integer? boolean?
-      + - * = < car cdr)))
+      pair? + - * = < car cdr make-vector vector?)))
 
 (define (primcall-op x) (first x))
 (define (primcall-operand1 x) (second x))
@@ -239,12 +241,50 @@ END
      (sete al)
      (sal boolean-shift scratch)
      (or! boolean-tag scratch)]
+    [(pair?)
+     (emit-expr (primcall-operand1 x) si env)
+     (and! heap-mask scratch)
+     (cmp pair-tag scratch)
+     (mov 0 scratch)
+     (sete al)
+     (sal boolean-shift scratch)
+     (or! boolean-tag scratch)]
+    [(vector?)
+     (emit-expr (primcall-operand1 x) si env)
+     (and! heap-mask scratch)
+     (cmp vector-tag scratch)
+     (mov 0 scratch)
+     (sete al)
+     (sal boolean-shift scratch)
+     (or! boolean-tag scratch)]
     [(car)
      (emit-expr (primcall-operand1 x) si env)
      (mov (offset -1 scratch) scratch)]
     [(cdr)
      (emit-expr (primcall-operand1 x) si env)
-     (mov (offset (- word-size 1) scratch) scratch)]))
+     (mov (offset (- word-size 1) scratch) scratch)]
+    [(make-vector)
+     (define vec-length (primcall-operand1 x))
+     (emit-expr vec-length si env) ; length
+     (mov scratch (offset 0 heap-register))   ; set the length
+     (mov scratch scratch-2)                  ; save the length
+     ; todo: memcpy, duh
+     (let zerofill ([n vec-length])
+       (unless (zero? n)
+         (let ([zero-addr (* 2 word-size n)])
+           (mov 0 (offset zero-addr heap-register))
+           (zerofill (sub1 n)))))
+     (mov heap-register scratch)              ; scratch = heap | vector-tag
+     (or! vector-tag scratch)
+
+     ; the DWORD "offset" trick
+     ;   new offset = (offset + align - 1) & ~(align - 1)
+
+     (let ([align (* word-size 2)])
+       (add (sub1 align) scratch-2)           ; align size to next
+       (and! (- (sub1 align)) scratch-2))     ;     object boundary
+
+     (add scratch-2 heap-register)]))
 
 (define (let? x) (eq? (first x) 'let))
 (define (bindings x) (second x))
@@ -309,14 +349,20 @@ END
     (offset (+ word-size (* word-size n)) ebp))
   (if (equal? (arch-name current-arch) "x86")
     (begin
+      ; todo make a macro for this ala (preserve (ebx esi) proc)
       (push ebp)
       (mov esp ebp)
+      (push 'ebx)
       (push esi)
       (mov (arg 1) esi) ; first param is heap pointer passed into scheme_entry
       (proc)
       (pop esi)
+      (pop 'ebx)
       (pop ebp))
-    (proc)))
+    (begin
+      (push 'rbx)
+      (proc)
+      (pop 'rbx))))
 
 (define (assemble-sources expr filename)
   (let ([stack-index (- word-size)]
