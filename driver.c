@@ -68,6 +68,7 @@ void print_value(scheme_val val, int* return_code) {
             printf("%zu", v[i+1]);
         }
         printf(")");
+    } else if ((val & heap_mask) == string_tag) {
     } else {
         printf("got unknown value %zu: ", val);
         printBinary(val);

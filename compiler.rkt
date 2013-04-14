@@ -2,7 +2,8 @@
 
 (require racket/system)
 
-(provide value->string
+(provide assemble-sources
+         value->string
          system-check
          default-arch
          compile-program
@@ -102,17 +103,14 @@
 (define symbol-tag      #b00000101)
 (define closure-tag     #b00000110)
 
-(define (emit-header filename)
-	; .file	"~a"
-  (printf #<<END
+(define assembly-header #<<END
 	.text
 	.align 4,0x90
 .globl _scheme_entry
 _scheme_entry:
 
 END
-    ; filename
-))
+)
 
 (define (apply-tag n mask tag)
   ; Take a number n and apply ~mask & tag
@@ -130,9 +128,10 @@ END
     [else (raise-argument-error 'x "don't know how to provide an immediate-rep" x)]))
 
 (define (primcall? x)
-  (member (first x)
-    '(add1 sub1 integer->char char->integer zero? integer? boolean?
-      pair? + - * = < car cdr make-vector vector?)))
+  (and (list? x)
+    (member (first x)
+      '(add1 sub1 integer->char char->integer zero? integer? boolean?
+        pair? + - * = < car cdr make-vector vector?))))
 
 (define (primcall-op x) (first x))
 (define (primcall-operand1 x) (second x))
@@ -146,18 +145,16 @@ END
 (define (variable? x) (symbol? x))
 (define (lookup x env) (hash-ref env x))
 
-(define (if? x) (eq? (first x) 'if))
+(define (if? x) (and (list? x) (eq? (first x) 'if)))
 (define (if-test x) (second x))
 (define (if-conseq x) (third x))
 (define (if-altern x) (fourth x))
 
 (define (prep-binary-call x si env)
-  (emit-expr (primcall-operand2 x) si env)
-  (mov scratch (stack-ptr si))
-  (emit-expr
-    (primcall-operand1 x)
-    (- si word-size)
-    env))
+  (list
+    (emit-expr (primcall-operand2 x) si env)
+    (mov scratch (stack-ptr si))
+    (emit-expr (primcall-operand1 x) (- si word-size) env)))
 
 (define unique-label
   (let ((count 0))
@@ -168,163 +165,185 @@ END
 (define (emit-if test conseq altern si env)
   (let ([L0 (unique-label)]
         [L1 (unique-label)])
-    (emit-expr test si env)
-    (cmp (immediate-rep #f) scratch)
-    (je L0)
-    (emit-expr conseq si env)
-    (jmp L1)
-    (label L0)
-    (emit-expr altern si env)
-    (label L1)))
+    (list
+      (emit-expr test si env)
+      (cmp (immediate-rep #f) scratch)
+      (je L0)
+      (emit-expr conseq si env)
+      (jmp L1)
+      (label L0)
+      (emit-expr altern si env)
+      (label L1))))
 
 (define (emit-primitive-call x si env)
   (case (primcall-op x)
-    [(+)
+    [(+) (list
      (prep-binary-call x si env)
-     (add (stack-ptr si) scratch)]
-    [(-)
+     (add (stack-ptr si) scratch))]
+    [(-) (list
      (prep-binary-call x si env)
-     (sub (stack-ptr si) scratch)]
-    [(*)
+     (sub (stack-ptr si) scratch))]
+    [(*) (list
      (prep-binary-call x si env)
      (shr fixnum-shift scratch)
      (shr fixnum-shift (stack-ptr si))
      (imul (stack-ptr si) scratch)
-     (shl fixnum-shift scratch)]
-    [(=)
+     (shl fixnum-shift scratch))]
+    [(=) (list
      (prep-binary-call x si env)
      (cmp (stack-ptr si) scratch)
      (mov 0 scratch)
      (sete al)
      (sal boolean-shift scratch)
-     (or! boolean-tag scratch)]
-    [(<)
+     (or! boolean-tag scratch))]
+    [(<) (list
      (prep-binary-call x si env)
      (cmp (stack-ptr si) scratch)
      (mov 0 scratch)
      (setl al)
      (sal boolean-shift scratch)
-     (or! boolean-tag scratch)]
-    [(add1)
+     (or! boolean-tag scratch))]
+    [(add1) (list
      (emit-expr (primcall-operand1 x) si env)
-     (add (immediate-rep 1) scratch)]
-    [(sub1)
+     (add (immediate-rep 1) scratch))]
+    [(sub1) (list
      (emit-expr (primcall-operand1 x) si env)
-     (sub (immediate-rep 1) scratch)]
-    [(integer->char)
+     (sub (immediate-rep 1) scratch))]
+    [(integer->char) (list
      (emit-expr (primcall-operand1 x) si env)
      (shl (- char-shift fixnum-shift) scratch)
-     (or! char-tag scratch)]
-    [(char->integer)
+     (or! char-tag scratch))]
+    [(char->integer) (list
      (emit-expr (primcall-operand1 x) si env)
-     (shr (- char-shift fixnum-shift) scratch)]
-    [(zero?)
+     (shr (- char-shift fixnum-shift) scratch))]
+    [(zero?) (list
      (emit-expr (primcall-operand1 x) si env)
      (cmp 0 scratch)
      (mov 0 scratch)
      (sete al)
      (sal boolean-shift scratch)
-     (or! boolean-tag scratch)]
-    [(integer?)
+     (or! boolean-tag scratch))]
+    [(integer?) (list
      (emit-expr (primcall-operand1 x) si env)
      (and! fixnum-mask scratch)
      (cmp fixnum-tag scratch)
      (mov 0 scratch)
      (sete al)
      (sal boolean-shift scratch)
-     (or! boolean-tag scratch)]
-    [(boolean?)
+     (or! boolean-tag scratch))]
+    [(boolean?) (list
      (emit-expr (primcall-operand1 x) si env)
      (and! boolean-mask scratch)
      (cmp boolean-tag scratch)
      (mov 0 scratch)
      (sete al)
      (sal boolean-shift scratch)
-     (or! boolean-tag scratch)]
-    [(pair?)
+     (or! boolean-tag scratch))]
+    [(pair?) (list
      (emit-expr (primcall-operand1 x) si env)
      (and! heap-mask scratch)
      (cmp pair-tag scratch)
      (mov 0 scratch)
      (sete al)
      (sal boolean-shift scratch)
-     (or! boolean-tag scratch)]
-    [(vector?)
+     (or! boolean-tag scratch))]
+    [(vector?) (list
      (emit-expr (primcall-operand1 x) si env)
      (and! heap-mask scratch)
      (cmp vector-tag scratch)
      (mov 0 scratch)
      (sete al)
      (sal boolean-shift scratch)
-     (or! boolean-tag scratch)]
-    [(car)
+     (or! boolean-tag scratch))]
+    [(car) (list
      (emit-expr (primcall-operand1 x) si env)
-     (mov (offset -1 scratch) scratch)]
-    [(cdr)
+     (mov (offset -1 scratch) scratch))]
+    [(cdr) (list
      (emit-expr (primcall-operand1 x) si env)
-     (mov (offset (- word-size 1) scratch) scratch)]
-    [(make-vector)
-     (define vec-length (primcall-operand1 x))
-     (emit-expr vec-length si env) ; length
-     (mov scratch (offset 0 heap-register))   ; set the length
-     (mov scratch scratch-2)                  ; save the length
-     ; todo: memcpy, duh
-     (let zerofill ([n vec-length])
-       (unless (zero? n)
-         (let ([zero-addr (* 2 word-size n)])
-           (mov 0 (offset zero-addr heap-register))
-           (zerofill (sub1 n)))))
-     (mov heap-register scratch)              ; scratch = heap | vector-tag
-     (or! vector-tag scratch)
+     (mov (offset (- word-size 1) scratch) scratch))]
+    [(make-vector) (list
+     (emit-vector x si env))]))
 
-     ; the DWORD "offset" trick
-     ;   new offset = (offset + align - 1) & ~(align - 1)
+; todo: memcpy, duh
+(define (zerofill n dest)
+  (unless (zero? n)
+    (let ([zero-addr (* 2 word-size n)])
+      (list 
+        (mov 0 (offset zero-addr dest))
+        (zerofill (sub1 n) dest)))))
 
-     (let ([align (* word-size 2)])
-       (add (sub1 align) scratch-2)           ; align size to next
-       (and! (- (sub1 align)) scratch-2))     ;     object boundary
+; the DWORD "offset" trick
+;   new offset = (offset + align - 1) & ~(align - 1)
+(define (align-to-dword dest)
+  (let ([align (* word-size 2)])
+    (list
+      (add (sub1 align) dest)
+      (and! (- (sub1 align)) dest))))
 
-     (add scratch-2 heap-register)]))
+(define (emit-vector x si env)
+  (define vec-length (primcall-operand1 x))
+  (list
+    (emit-expr vec-length si env) ; length
+    (mov scratch (offset 0 heap-register))   ; set the length
+    (mov scratch scratch-2)                  ; save the length
+    (zerofill vec-length heap-register)
+    (mov heap-register scratch)              ; scratch = heap | vector-tag
+    (or! vector-tag scratch)
+    (align-to-dword scratch-2)
+    (add scratch-2 heap-register)))
 
-(define (let? x) (eq? (first x) 'let))
+(define (emit-string x si env)
+  (define utf8-bytes (string->bytes/utf-8 x))
+  (define str-length (bytes-length utf8-bytes))
+  (list 
+    (emit-expr str-length si env) ; length
+    (mov scratch (offset 0 heap-register))
+    (mov scratch scratch-2)
+    (zerofill str-length heap-register)
+    (mov heap-register scratch)
+    (or! string-tag scratch)
+    (align-to-dword scratch-2)
+    (add scratch-2 heap-register)))
+
+(define (let? x) (and (list? x) (eq? (first x) 'let)))
 (define (bindings x) (second x))
 (define (body x) (third x))
-
-(define (lhs binding) (first binding))
-(define (rhs binding) (second binding))
 
 (define (make-env) (hash))
 (define (extend-env variable-name stack-index env)
   (hash-set env variable-name stack-index))
 
 (define (emit-let bindings body si env)
+  (define (lhs binding) (first binding))
+  (define (rhs binding) (second binding))
   (let f [(b* bindings) (new-env env) (si si)]
     (cond
       [(null? b*) (emit-expr body si new-env)]
       [else
         (let [(b (first b*))]
-          (emit-expr (rhs b) si env)
-          (mov scratch (stack-ptr si))
-          (f (rest b*)
-             (extend-env (lhs b) si new-env)
-             (- si word-size)))])))
+          (list
+            (emit-expr (rhs b) si env)
+            (mov scratch (stack-ptr si))
+            (f (rest b*)
+               (extend-env (lhs b) si new-env)
+               (- si word-size))))])))
 
 (define (emit-cons head tail si env)
-  (emit-expr head si env)
-  (push scratch)
-  (emit-expr tail si env)
-  (mov scratch (offset word-size heap-register))
-  (pop (offset 0 heap-register))
-  (mov heap-register scratch)
-  (or! pair-tag scratch)
-  (add (* 2 word-size) heap-register))
+  (list
+    (emit-expr head si env)
+    (push scratch)
+    (emit-expr tail si env)
+    (mov scratch (offset word-size heap-register))
+    (pop (offset 0 heap-register))
+    (mov heap-register scratch)
+    (or! pair-tag scratch)
+    (add (* 2 word-size) heap-register)))
 
-(define (cons-call? x) (eq? (first x) 'cons))
+(define (cons-call? x) (and (list? x) (eq? (first x) 'cons)))
 (define (cons-head x) (first (rest x)))
 (define (cons-tail x) (second (rest x)))
 
 (define (emit-expr x si env [dest #f])
-  (emit "# START ~a" (value->string x))
   (let ([dest (or dest scratch)])
     (cond
       [(immediate? x)
@@ -339,16 +358,16 @@ END
        (emit-primitive-call x si env)]
       [(cons-call? x)
        (emit-cons (cons-head x) (cons-tail x) si env)]
+      [(string? x)
+       (emit-string x si env)]
       [else
-        (error (format "don't know how to emit expression \"~a\"" (value->string x)))]))
-
-  (emit "# END ~a" (value->string x)))
+        (error (format "don't know how to emit expression \"~a\"" (value->string x)))])))
 
 (define (setup-stack-frame proc)
   (define (arg n) ; 32 bit
     (offset (+ word-size (* word-size n)) ebp))
   (if (equal? (arch-name current-arch) "x86")
-    (begin
+    (list
       ; todo make a macro for this ala (preserve (ebx esi) proc)
       (push ebp)
       (mov esp ebp)
@@ -359,7 +378,7 @@ END
       (pop esi)
       (pop 'ebx)
       (pop ebp))
-    (begin
+    (list
       (push 'rbx)
       (proc)
       (pop 'rbx))))
@@ -367,19 +386,18 @@ END
 (define (assemble-sources expr filename)
   (let ([stack-index (- word-size)]
         [env (hash)])
-    (emit-header filename)
-    (setup-stack-frame
-      (lambda ()
-        (emit-expr expr stack-index env)))
-    (ret)))
+    (string-append assembly-header
+      (assemble (list
+        (setup-stack-frame
+          (lambda ()
+            (emit-expr expr stack-index env)))
+        (ret))))))
 
 (define (compile-program x filename output [arch default-arch])
   (define (emit-assembly)
-    (with-output-to-string
+    (arch-parameterize arch
       (lambda ()
-        (arch-parameterize arch
-          (lambda ()
-            (assemble-sources x filename))))))
+        (assemble-sources x filename))))
 
   (let [(assembly (emit-assembly))]
     (with-output-to-file output

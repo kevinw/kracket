@@ -1,20 +1,11 @@
 #lang racket
 
-(provide debug-emit offset offset-as-string emit emit-no-tab dest-as-string current-size-suffix)
+(provide assemble offset offset-as-string dest-as-string src-as-string current-size-suffix)
 
 (define current-size-suffix (make-parameter "l"))
 
-(define emit-no-tab
-  (lambda args
-    (apply printf args)
-    (printf "\n")))
-
-(define emit
-  (lambda args
-    (printf "\t")
-    (apply emit-no-tab args)))
-
-(define debug-emit emit)
+(struct label-obj (name) #:transparent)
+(struct op (operand) #:transparent)
 
 (struct offset (bytes register))
 
@@ -37,17 +28,17 @@
   '((32, "q")
     (64, "l")))
 
+(define (op->string op)
+  (cond
+    [(op? op) (symbol->string (op-operand op))]
+    [(symbol? op)(format "~a~a" op (current-size-suffix))]
+    [else (error "op->string given unexpected value" op)]))
+
 (define-syntax-rule (defop <name>)
   (begin
-      (provide <name>)
-      (define (<name> src dest)
-        (emit "~a ~a, ~a"
-              (with-size-suffix (symbol->string '<name>))
-              (src-as-string src)
-              (dest-as-string dest)))))
-
-(define (with-size-suffix op)
-  (format "~a~a" op (current-size-suffix)))
+    (provide <name>)
+    (define (<name> src dest)
+      (list '<name> src dest))))
 
 (defop mov)
 (defop add)
@@ -58,35 +49,66 @@
 (defop cmp)
 (defop sal)
 
-(define (or! src dest) (emit "~a ~a, ~a" (with-size-suffix "or") (src-as-string src) (dest-as-string dest)))
+(define (or! src dest) (list 'or src dest))
 (provide or!)
 
-(define (je label) (emit "je ~a" label))
+(define (je label) (list (op 'je) label))
 (provide je)
 
-(define (jmp label) (emit "jmp ~a" label))
+(define (jmp label) (list (op 'jmp) label))
 (provide jmp)
 
-(define (label label) (emit-no-tab "~a:" label))
+(define (label label) (list (label-obj label)))
 (provide label)
 
-(define (ret) (emit "ret"))
+(define (ret) (list (op 'ret)))
 (provide ret)
 
-(define (and! src dest) (emit "~a ~a, ~a" (with-size-suffix "and") (src-as-string src) (dest-as-string dest)))
+(define (and! src dest) (list 'and src dest))
 (provide and!)
 
-(define (sete dest) (emit "sete ~a" (dest-as-string dest)))
+(define (sete dest) (list (op 'sete) dest))
 (provide sete)
 
-(define (setl dest) (emit "setl ~a" (dest-as-string dest)))
+(define (setl dest) (list (op 'setl) dest))
 (provide setl)
 
-(define (push src) (emit "~a ~a" (with-size-suffix "push") (src-as-string src)))
+(define (push src) (list 'push src))
 (provide push)
 
-(define (pop dest) (emit "~a ~a" (with-size-suffix "pop") (dest-as-string dest)))
+(define (pop dest) (list 'pop dest))
 (provide pop)
+
+(define (assemble-line source-line)
+  ; Turn an assembly operation list like
+  ;  (list 'mov 5 'eax) into "movl $5, %eax"
+  (define f (first source-line))
+  (if (label-obj? f)
+    (format "~a:" (label-obj-name f))
+    (let* ([op-str (op->string f)]
+           [code (case (length source-line)
+             [(3) (format "~a ~a, ~a" op-str
+                    (src-as-string (second source-line))
+                    (dest-as-string (third source-line)))]
+             [(2) (format "~a ~a" op-str (dest-as-string (second source-line)))]
+             [(1) (format "~a" op-str)]
+             [else (error "source line expected to have 1, 2, or 3 elems" source-line)])])
+
+      (string-append "\t" code))))
+
+(define (operation? l)
+  (let ([f (first l)])
+    (or (symbol? f) (op? f) (label-obj? f))))
+
+(define (assemble-flatten l)
+  (cond
+    [(or (void? l) (empty? l)) '()]
+    [(operation? l) (list l)]
+    [else (append (assemble-flatten (first l)) (assemble-flatten (rest l)))]))
+
+(define (assemble sources)
+  (let ([flattened-src (assemble-flatten sources)])
+    (string-join (map assemble-line flattened-src) "\n")))
 
 #|
 (define-syntax-rule (mov src dest)

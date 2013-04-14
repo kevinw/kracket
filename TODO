@@ -1,5 +1,7 @@
 # TODO
 
+- general scheme criticisms:
+  - top level function namespace is HUGE
 - get an ARM test path working with qemu
 - get an xcode project with code actually running on a physical iphone
 - closures, etc. continue "an incremental approach to compiler construction"
