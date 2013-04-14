@@ -175,6 +175,15 @@ END
       (emit-expr altern si env)
       (label L1))))
 
+(define (emit-type-check mask tag)
+  (list
+    (and! mask scratch)
+    (cmp tag scratch)
+    (mov 0 scratch)
+    (sete al)
+    (sal boolean-shift scratch)
+    (or! boolean-tag scratch)))
+
 (define (emit-primitive-call x si env)
   (case (primcall-op x)
     [(+) (list
@@ -225,36 +234,16 @@ END
      (or! boolean-tag scratch))]
     [(integer?) (list
      (emit-expr (primcall-operand1 x) si env)
-     (and! fixnum-mask scratch)
-     (cmp fixnum-tag scratch)
-     (mov 0 scratch)
-     (sete al)
-     (sal boolean-shift scratch)
-     (or! boolean-tag scratch))]
+     (emit-type-check fixnum-mask fixnum-tag))]
     [(boolean?) (list
      (emit-expr (primcall-operand1 x) si env)
-     (and! boolean-mask scratch)
-     (cmp boolean-tag scratch)
-     (mov 0 scratch)
-     (sete al)
-     (sal boolean-shift scratch)
-     (or! boolean-tag scratch))]
+     (emit-type-check boolean-mask boolean-tag))]
     [(pair?) (list
      (emit-expr (primcall-operand1 x) si env)
-     (and! heap-mask scratch)
-     (cmp pair-tag scratch)
-     (mov 0 scratch)
-     (sete al)
-     (sal boolean-shift scratch)
-     (or! boolean-tag scratch))]
+     (emit-type-check heap-mask pair-tag))]
     [(vector?) (list
      (emit-expr (primcall-operand1 x) si env)
-     (and! heap-mask scratch)
-     (cmp vector-tag scratch)
-     (mov 0 scratch)
-     (sete al)
-     (sal boolean-shift scratch)
-     (or! boolean-tag scratch))]
+     (emit-type-check heap-mask vector-tag))]
     [(car) (list
      (emit-expr (primcall-operand1 x) si env)
      (mov (offset -1 scratch) scratch))]
