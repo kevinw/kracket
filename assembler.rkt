@@ -1,11 +1,13 @@
 #lang racket
 
-(provide assemble offset offset-as-string dest-as-string src-as-string current-size-suffix)
+(provide data assemble offset offset-as-string dest-as-string src-as-string current-size-suffix)
 
 (define current-size-suffix (make-parameter "l"))
 
-(struct label-obj (name) #:transparent)
 (struct op (operand) #:transparent)
+(struct label-obj (name) #:transparent)
+(struct data-obj (label str) #:transparent)
+(struct comment-obj (str) #:transparent)
 
 (struct offset (bytes register))
 
@@ -14,6 +16,7 @@
 
 (define (dest-as-string dest)
   (cond
+    [(op? dest) (symbol->string (op-operand dest))]
     [(offset? dest) (offset-as-string dest)]
     [(string? dest) dest]
     [(symbol? dest) (format "%~a" (symbol->string dest))]
@@ -49,6 +52,13 @@
 (defop cmp)
 (defop sal)
 
+(define comment
+  (lambda args
+    (comment-obj (apply format args))))
+(provide comment)
+
+(define (data label str) (list (data-obj label str)))
+
 (define (or! src dest) (list 'or src dest))
 (provide or!)
 
@@ -57,6 +67,13 @@
 
 (define (jmp label) (list (op 'jmp) label))
 (provide jmp)
+
+(define (cld) (list (op 'cld)))
+(provide cld)
+
+(define movsb 'movsb)
+(define (rep repop) (list (op 'rep) (op repop)))
+(provide rep movsb)
 
 (define (label label) (list (label-obj label)))
 (provide label)
@@ -83,32 +100,65 @@
   ; Turn an assembly operation list like
   ;  (list 'mov 5 'eax) into "movl $5, %eax"
   (define f (first source-line))
-  (if (label-obj? f)
-    (format "~a:" (label-obj-name f))
-    (let* ([op-str (op->string f)]
-           [code (case (length source-line)
-             [(3) (format "~a ~a, ~a" op-str
-                    (src-as-string (second source-line))
-                    (dest-as-string (third source-line)))]
-             [(2) (format "~a ~a" op-str (dest-as-string (second source-line)))]
-             [(1) (format "~a" op-str)]
-             [else (error "source line expected to have 1, 2, or 3 elems" source-line)])])
-
-      (string-append "\t" code))))
-
-(define (operation? l)
-  (let ([f (first l)])
-    (or (symbol? f) (op? f) (label-obj? f))))
-
-(define (assemble-flatten l)
   (cond
-    [(or (void? l) (empty? l)) '()]
-    [(operation? l) (list l)]
-    [else (append (assemble-flatten (first l)) (assemble-flatten (rest l)))]))
+    [(label-obj? f) (format "~a:" (label-obj-name f))]
+    [(data-obj? f) ""]
+    [(comment-obj? f) (format "# ~a" (comment-obj-str f))]
+    [else
+      (let* ([op-str (op->string f)]
+             [code (case (length source-line)
+               [(3) (format "~a ~a, ~a" op-str
+                      (src-as-string (second source-line))
+                      (dest-as-string (third source-line)))]
+               [(2) (format "~a ~a" op-str (dest-as-string (second source-line)))]
+               [(1) (format "~a" op-str)]
+               [else (error "source line expected to have 1, 2, or 3 elems" source-line)])])
+
+        (string-append "\t" code))]))
+
+(define (code? l)
+  (let ([f (first l)])
+    (or (symbol? f) (op? f) (label-obj? f) (comment-obj? f))))
+
+(define (assemble-flatten l [data '()])
+  (cond
+    [(or (void? l) (empty? l)) (list '() data)]
+    [(data-obj? l) (list '() (cons l data))]
+    [(code? l) (list (list l) data)]
+    [else
+      (match-let* ([(list res1 data1) (assemble-flatten (first l) data)]
+                   [(list res2 data2) (assemble-flatten (rest l) data1)])
+        (list (append res1 res2) data2))]))
+
+(define assembly-header #<<END
+	.text
+	.align 4,0x90
+.globl _scheme_entry
+_scheme_entry:
+END
+)
+
+(define (data-obj->string d)
+  (format "~a:\n\t.asciz \"~a\""
+    (data-obj-label d)
+    (data-obj-str d)))
+
+(define (data-segment data)
+  (string-join
+    (list
+      "\t.data"
+      (string-join (map data-obj->string data) "\n"))
+    "\n"))
 
 (define (assemble sources)
-  (let ([flattened-src (assemble-flatten sources)])
-    (string-join (map assemble-line flattened-src) "\n")))
+  (match-let ([(list flattened-src data) (assemble-flatten sources)])
+    (string-join 
+      (append
+        (list
+          (data-segment data)
+          assembly-header)
+        (map assemble-line flattened-src))
+      "\n")))
 
 #|
 (define-syntax-rule (mov src dest)

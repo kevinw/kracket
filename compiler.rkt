@@ -65,6 +65,10 @@
     (syntax-id-rules ()
       [<id> (<param>)])))
 
+(define-syntax dword-size
+  (syntax-id-rules ()
+    [dword-size (* word-size 2)]))
+
 (define-param-id current-arch current-arch-param)
 (define-param-id word-size word-size-param)
 (define-param-id scratch scratch-register)
@@ -102,15 +106,6 @@
 (define string-tag      #b00000011)
 (define symbol-tag      #b00000101)
 (define closure-tag     #b00000110)
-
-(define assembly-header #<<END
-	.text
-	.align 4,0x90
-.globl _scheme_entry
-_scheme_entry:
-
-END
-)
 
 (define (apply-tag n mask tag)
   ; Take a number n and apply ~mask & tag
@@ -256,7 +251,7 @@ END
 ; todo: memcpy, duh
 (define (zerofill n dest)
   (unless (zero? n)
-    (let ([zero-addr (* 2 word-size n)])
+    (let ([zero-addr (* dword-size n)])
       (list 
         (mov 0 (offset zero-addr dest))
         (zerofill (sub1 n) dest)))))
@@ -264,7 +259,7 @@ END
 ; the DWORD "offset" trick
 ;   new offset = (offset + align - 1) & ~(align - 1)
 (define (align-to-dword dest)
-  (let ([align (* word-size 2)])
+  (let ([align dword-size])
     (list
       (add (sub1 align) dest)
       (and! (- (sub1 align)) dest))))
@@ -282,21 +277,58 @@ END
     (add scratch-2 heap-register)))
 
 (define (emit-string x si env)
+ 
+#|
+  mov esi, mystr    ; loads address of mystr into esi
+  mov edi, mystr2   ; loads address of mystr2 into edi
+  cld               ; clear direction flag (forward)
+  mov ecx,6
+  rep movsb         ; copy six times
+
+    void kcopy (unsigned int src, unsigned int dst,
+                unsigned int nbytes) {
+        __asm__ __volatile__ (
+        "cld \n"
+        "rep \n"
+        "movsb \n"
+        :
+        : "S"(src), "D"(dst), "c"(nbytes)
+        : "%esi", "%edi", "%ecx" );
+    }
+    
+|#
+
+
   (define utf8-bytes (string->bytes/utf-8 x))
   (define str-length (bytes-length utf8-bytes))
+  (define label (unique-label))
   (list 
-    (emit-expr str-length si env) ; length
-    (mov scratch (offset 0 heap-register))
-    (mov scratch scratch-2)
-    (zerofill str-length heap-register)
-    (mov heap-register scratch)
+    (mov str-length scratch-2)
+    (mov str-length (offset 0 heap-register))
+
+    (push esi)
+
+    (mov esi edi)                          ; destination: edi
+    (add dword-size edi)
+
+    (data label utf8-bytes)
+    (mov (format "$~a" label) esi)
+
+    (mov str-length 'ecx)
+
+    (cld)
+    (rep movsb)
+    (pop esi)
+
+    ; tag string pointer
+    (mov heap-register scratch) 
     (or! string-tag scratch)
+
     (align-to-dword scratch-2)
-    (add scratch-2 heap-register)))
+    (add scratch-2 heap-register)
+    ))
 
 (define (let? x) (and (list? x) (eq? (first x) 'let)))
-(define (bindings x) (second x))
-(define (body x) (third x))
 
 (define (make-env) (hash))
 (define (extend-env variable-name stack-index env)
@@ -326,13 +358,16 @@ END
     (pop (offset 0 heap-register))
     (mov heap-register scratch)
     (or! pair-tag scratch)
-    (add (* 2 word-size) heap-register)))
+    (add dword-size heap-register)))
 
 (define (cons-call? x) (and (list? x) (eq? (first x) 'cons)))
 (define (cons-head x) (first (rest x)))
 (define (cons-tail x) (second (rest x)))
 
 (define (emit-expr x si env [dest #f])
+  (define (bindings x) (second x))
+  (define (body x) (third x))
+
   (let ([dest (or dest scratch)])
     (cond
       [(immediate? x)
@@ -375,12 +410,11 @@ END
 (define (assemble-sources expr filename)
   (let ([stack-index (- word-size)]
         [env (hash)])
-    (string-append assembly-header
-      (assemble (list
-        (setup-stack-frame
-          (lambda ()
-            (emit-expr expr stack-index env)))
-        (ret))))))
+    (assemble (list
+      (setup-stack-frame
+        (lambda ()
+          (emit-expr expr stack-index env)))
+      (ret)))))
 
 (define (compile-program x filename output [arch default-arch])
   (define (emit-assembly)

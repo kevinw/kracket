@@ -1,1 +1,1 @@
-(make-vector 1)
+"BAZA"

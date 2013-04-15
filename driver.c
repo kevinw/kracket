@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <assert.h>
 
 #include "binary.h"
 #include "aux.h"
@@ -37,38 +38,75 @@
 
 scheme_val scheme_entry();
 
-#define UNPACK_FIXNUM(a) (a >> fixnum_shift)
+int is_fixnum(scheme_val val) {
+    return (val & fixnum_mask) == fixnum_tag;
+}
+
+static scheme_val UNPACK_FIXNUM(scheme_val a) {
+    assert(is_fixnum(a));
+    return a >> fixnum_shift;
+}
+
+void print_value(scheme_val val, int* return_code);
+
+static void print_fixnum(scheme_val val) {
+    printf("%" PRIiPTR, UNPACK_FIXNUM(val));
+}
+
+static void print_char(scheme_val val) {
+    unsigned char c = val >> char_shift;
+    printf("%c", c);
+}
+
+static void print_boolean(scheme_val val) {
+    printf(val >> boolean_shift ? "#t" : "#f");
+}
+
+static void print_pair(scheme_val val, int* return_code) {
+    scheme_val* head = (scheme_val*)(val - 1);
+    scheme_val* tail = (scheme_val*)(val - 1 + wordsize);
+
+    printf("(");
+    print_value(*head, return_code);
+    printf(" . ");
+    print_value(*tail, return_code);
+    printf(")");
+}
+
+static void print_vector(scheme_val val) {
+    printf("#(");
+    size_t* v = (size_t*)(val & ~heap_mask);
+    size_t vectorLength = UNPACK_FIXNUM(*v);
+    for (int i = 0; i < vectorLength; ++i) {
+        if (i > 0)
+            printf(" ");
+        printf("%zu", v[i+1]);
+    }
+    printf(")");
+}
+
+static void print_string(scheme_val val) {
+    size_t* s = (size_t*)(val & ~heap_mask);
+    size_t stringLength = *s;
+    const char* string = (const char*)(s[1]);
+    printf("[%zu] \"%.*s\"", stringLength, stringLength, string);
+}
 
 void print_value(scheme_val val, int* return_code) {
-    if ((val & fixnum_mask) == fixnum_tag) {
-        printf("%" PRIiPTR, UNPACK_FIXNUM(val));
+    if (is_fixnum(val)) {
+        print_fixnum(val);
     } else if ((val & char_mask) == char_tag) {
-        unsigned char c = val >> char_shift;
-        printf("%c", c);
+        print_char(val);
     } else if ((val & boolean_mask) == boolean_tag) {
-        printf(val >> boolean_shift ? "#t" : "#f");
+        print_boolean(val);
     } else if (val == empty_list) {
         printf("'()");
     } else if ((val & heap_mask) == pair_tag) {
-        scheme_val* head = (scheme_val*)(val - 1);
-        scheme_val* tail = (scheme_val*)(val - 1 + wordsize);
-
-        printf("(");
-        print_value(*head, return_code);
-        printf(" . ");
-        print_value(*tail, return_code);
-        printf(")");
+        print_pair(val, return_code);
     } else if ((val & heap_mask) == vector_tag) {
-        printf("#(");
-        size_t* v = (size_t*)(val & ~heap_mask);
-        size_t vectorLength = UNPACK_FIXNUM(*v);
-        for (int i = 0; i < vectorLength; ++i) {
-            if (i > 0)
-                printf(" ");
-            printf("%zu", v[i+1]);
-        }
-        printf(")");
+        print_vector(val);
     } else if ((val & heap_mask) == string_tag) {
+        print_string(val);
     } else {
         printf("got unknown value %zu: ", val);
         printBinary(val);
