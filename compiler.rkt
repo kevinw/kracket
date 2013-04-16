@@ -277,39 +277,17 @@
     (add scratch-2 heap-register)))
 
 (define (emit-string x si env)
- 
-#|
-  mov esi, mystr    ; loads address of mystr into esi
-  mov edi, mystr2   ; loads address of mystr2 into edi
-  cld               ; clear direction flag (forward)
-  mov ecx,6
-  rep movsb         ; copy six times
-
-    void kcopy (unsigned int src, unsigned int dst,
-                unsigned int nbytes) {
-        __asm__ __volatile__ (
-        "cld \n"
-        "rep \n"
-        "movsb \n"
-        :
-        : "S"(src), "D"(dst), "c"(nbytes)
-        : "%esi", "%edi", "%ecx" );
-    }
-    
-|#
-
-
   (define utf8-bytes (string->bytes/utf-8 x))
   (define str-length (bytes-length utf8-bytes))
   (define label (unique-label))
   (list 
-    (mov str-length scratch-2)
+    (mov (+ word-size str-length) scratch-2)
     (mov str-length (offset 0 heap-register))
 
     (push esi)
 
-    (mov esi edi)                          ; destination: edi
-    (add dword-size edi)
+    (mov esi edi) ; destination: edi
+    (add word-size edi)
 
     (data label utf8-bytes)
     (mov (format "$~a" label) esi)
@@ -318,6 +296,7 @@
 
     (cld)
     (rep movsb)
+
     (pop esi)
 
     ; tag string pointer

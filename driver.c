@@ -88,8 +88,9 @@ static void print_vector(scheme_val val) {
 static void print_string(scheme_val val) {
     size_t* s = (size_t*)(val & ~heap_mask);
     size_t stringLength = *s;
-    const char* string = (const char*)(s[1]);
-    printf("[%zu] \"%.*s\"", stringLength, stringLength, string);
+
+    const unsigned char* string = (const unsigned char*)(&s[1]);
+    printf("\"%.*s\"\n", (int)stringLength, string);
 }
 
 void print_value(scheme_val val, int* return_code) {
