@@ -28,11 +28,11 @@
 (define rsp 'rsp)
 (define al  'al)
 
-(struct arch (name size-suffix word-size scratch-register scratch-2-register stack-register heap-register gcc-arch) #:transparent)
+(struct arch (name size-suffix word-size scratch-register scratch-2-register stack-register heap-register str-src-reg str-dest-reg str-count-reg gcc-arch) #:transparent)
 (define architectures
   (list
-    (list 'x86    (arch "x86"    "l" 4 'eax 'ebx 'esp 'esi "i386"))
-    (list 'x86_64 (arch "x86_64" "q" 8 'rax 'rbx 'rsp 'rdi "x86_64"))))
+    (list 'x86    (arch "x86"    "l" 4 'eax 'ebx 'esp 'esi 'esi 'edi 'ecx "i386"))
+    (list 'x86_64 (arch "x86_64" "q" 8 'rax 'rbx 'rsp 'rsi 'rsi 'rdi 'rcx "x86_64"))))
 
 (define current-arch-param (make-parameter default-arch))
 (define word-size-param (make-parameter 8))
@@ -40,6 +40,9 @@
 (define scratch-2-register (make-parameter 'rbx))
 (define stack-register-param (make-parameter rsp))
 (define heap-register-param (make-parameter 'rdi))
+(define str-src-reg-param (make-parameter 'rsi))
+(define str-dest-reg-param (make-parameter 'rdi))
+(define str-count-reg-param (make-parameter 'rcx))
 
 (define (arch-parameterize arch cb)
   (let ([arch (second (assoc arch architectures))])
@@ -49,15 +52,12 @@
                    [scratch-register (arch-scratch-register arch)]
                    [scratch-2-register (arch-scratch-2-register arch)]
                    [stack-register-param (arch-stack-register arch)]
-                   [heap-register-param (arch-heap-register arch)])
+                   [heap-register-param (arch-heap-register arch)]
+                   [str-src-reg-param (arch-str-src-reg arch)]
+                   [str-dest-reg-param (arch-str-dest-reg arch)]
+                   [str-count-reg-param (arch-str-count-reg arch)])
+
       (cb))))
-
-(define (compile-cmd input output arch)
-  ; Returns the GCC command to link together a complete progam.
-  (define gcc-arch-flag (arch-gcc-arch (second (assoc arch architectures))))
-  (define CFLAGS (format "-std=c99 -Wall -g -O3 -arch ~a" gcc-arch-flag)) ; TODO: parse this from the Makefile? emit the makefile?
-
-  (format "gcc ~a driver.c aux.c ~a -o ~a" CFLAGS input output))
 
 ; define syntax shortcuts for accessing parameters like they were just identifiers
 (define-syntax-rule (define-param-id <id> <param>)
@@ -65,16 +65,29 @@
     (syntax-id-rules ()
       [<id> (<param>)])))
 
-(define-syntax dword-size
-  (syntax-id-rules ()
-    [dword-size (* word-size 2)]))
-
+; TODO: this is embarassing. parameterize one architecture variable, and then
+; define macros off that.
 (define-param-id current-arch current-arch-param)
 (define-param-id word-size word-size-param)
 (define-param-id scratch scratch-register)
 (define-param-id scratch-2 scratch-2-register)
 (define-param-id stack-register stack-register-param)
 (define-param-id heap-register heap-register-param)
+(define-param-id str-src-reg str-src-reg-param)
+(define-param-id str-dest-reg str-dest-reg-param)
+(define-param-id str-count-reg str-count-reg-param)
+
+(define (compile-cmd input output arch)
+  ; Returns the GCC command to link together a complete progam.
+  (define gcc-arch-flag (arch-gcc-arch (second (assoc arch architectures))))
+  (define CFLAGS (format "-std=c99 -Wall -g -O3 -arch ~a" gcc-arch-flag)) ; TODO: parse this from the Makefile? emit the makefile?
+  (define LFLAGS "-Wl,-no_pie")
+
+  (format "gcc ~a ~a driver.c aux.c ~a -o ~a" CFLAGS LFLAGS input output))
+
+(define-syntax dword-size
+  (syntax-id-rules ()
+    [dword-size (* word-size 2)]))
 
 (define (stack-ptr index) (format "~a(%~a)" index stack-register))
 
@@ -276,6 +289,11 @@
     (align-to-dword scratch-2)
     (add scratch-2 heap-register)))
 
+(define (data-ref label-name)
+  (if (equal? (arch-name current-arch) "x86")
+    (format "~a" label-name)
+    (format "~a(%rip)" label-name)))
+
 (define (emit-string x si env)
   (define utf8-bytes (string->bytes/utf-8 x))
   (define str-length (bytes-length utf8-bytes))
@@ -284,20 +302,20 @@
     (mov (+ word-size str-length) scratch-2)
     (mov str-length (offset 0 heap-register))
 
-    (push esi)
+    (push heap-register)
 
-    (mov esi edi) ; destination: edi
-    (add word-size edi)
+    (mov heap-register str-dest-reg) ; destination: edi
+    (add word-size str-dest-reg)
 
     (data label utf8-bytes)
-    (mov (format "$~a" label) esi)
+    (lea (data-ref label) str-src-reg)
 
-    (mov str-length 'ecx)
+    (mov str-length str-count-reg)
 
     (cld)
     (rep movsb)
 
-    (pop esi)
+    (pop heap-register)
 
     ; tag string pointer
     (mov heap-register scratch) 
@@ -383,6 +401,8 @@
       (pop ebp))
     (list
       (push 'rbx)
+      (unless (equal? 'rdi heap-register) ; first arg is pointer to heap; move to our heap-register
+        (mov 'rdi heap-register))
       (proc)
       (pop 'rbx))))
 

@@ -147,6 +147,11 @@
   (check-prog '(vector? #f) "#f")
   (check-prog '(vector? 5) "#f"))
 
+(test-case
+  "Strings"
+
+  (check-prog "hello" "\"hello\"")
+  (check-prog "" "\"\""))
 ;))
 
 ;(require rackunit/text-ui)

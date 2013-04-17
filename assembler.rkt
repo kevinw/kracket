@@ -51,6 +51,7 @@
 (defop imul)
 (defop cmp)
 (defop sal)
+(defop lea)
 
 (define comment
   (lambda args
