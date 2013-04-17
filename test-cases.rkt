@@ -127,8 +127,8 @@
 (test-case
   "Cons"
 
-  (check-prog '(cons 10 20) "(10 . 20)"))
-  (check-prog '(cons 10 (cons 20 30)) "(10 . (20 . 30))")
+  (check-prog '(cons 10 20) "(10 . 20)")
+  (check-prog '(cons 10 (cons 20 30)) "(10 . (20 . 30))"))
 
 (test-case
   "Car/Cdr"
@@ -145,7 +145,9 @@
   (check-prog '(make-vector 1) "#(0)")
   (check-prog '(vector? (make-vector 1)) "#t")
   (check-prog '(vector? #f) "#f")
-  (check-prog '(vector? 5) "#f"))
+  (check-prog '(vector? 5) "#f")
+
+  (check-prog '(vector-length (make-vector 30)) "30"))
 
 (test-case
   "Strings"

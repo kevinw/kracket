@@ -1,1 +1,1 @@
-"hello, world!"
+(vector-length (make-vector 5))

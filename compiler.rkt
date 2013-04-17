@@ -139,7 +139,7 @@
   (and (list? x)
     (member (first x)
       '(add1 sub1 integer->char char->integer zero? integer? boolean?
-        pair? + - * = < car cdr make-vector vector?))))
+        pair? + - * = < car cdr make-vector vector-length vector?))))
 
 (define (primcall-op x) (first x))
 (define (primcall-operand1 x) (second x))
@@ -259,7 +259,11 @@
      (emit-expr (primcall-operand1 x) si env)
      (mov (offset (- word-size 1) scratch) scratch))]
     [(make-vector) (list
-     (emit-vector x si env))]))
+     (emit-vector x si env))]
+    [(vector-length) (list
+     (emit-vector-length x si env))]
+    [(vector-ref) (list
+     )]))
 
 ; todo: memcpy, duh
 (define (zerofill n dest)
@@ -288,6 +292,16 @@
     (or! vector-tag scratch)
     (align-to-dword scratch-2)
     (add scratch-2 heap-register)))
+
+(define (emit-vector-length x si env)
+  (list
+    (emit-expr (primcall-operand1 x) si env)
+    (fail-if-not-type vector-tag heap-mask)
+    (and! (bitwise-not heap-mask) scratch)
+    (mov (offset 0 scratch) scratch)))
+
+(define (fail-if-not-type tag mask)
+  (void))
 
 (define (data-ref label-name)
   (if (equal? (arch-name current-arch) "x86")
