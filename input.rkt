@@ -1,1 +1,1 @@
-(vector-length (make-vector 5))
+(integer->char 0)

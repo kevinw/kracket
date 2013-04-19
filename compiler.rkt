@@ -139,7 +139,7 @@
   (and (list? x)
     (member (first x)
       '(add1 sub1 integer->char char->integer zero? integer? boolean?
-        pair? + - * = < car cdr make-vector vector-length vector?))))
+        pair? + - * = < car cdr make-vector vector-length vector-ref vector?))))
 
 (define (primcall-op x) (first x))
 (define (primcall-operand1 x) (second x))
@@ -261,9 +261,9 @@
     [(make-vector) (list
      (emit-vector x si env))]
     [(vector-length) (list
-     (emit-vector-length x si env))]
+      (emit-vector-length x si env))]
     [(vector-ref) (list
-     )]))
+      (emit-vector-ref x si env))]))
 
 ; todo: memcpy, duh
 (define (zerofill n dest)
@@ -299,6 +299,14 @@
     (fail-if-not-type vector-tag heap-mask)
     (and! (bitwise-not heap-mask) scratch)
     (mov (offset 0 scratch) scratch)))
+
+(define (emit-vector-ref x si env)
+  (list
+    (emit-expr (primcall-operand1 x) si env) ; vector
+    (emit-expr (primcall-operand2 x) si env scratch-2) ; length fixnum
+    (shr fixnum-shift scratch-2)
+    (and! (bitwise-not heap-mask) scratch)
+    (mov (format "(%~a, %~a, 1)" scratch scratch-2) scratch)))
 
 (define (fail-if-not-type tag mask)
   (void))
@@ -341,7 +349,82 @@
 
 (define (let? x) (and (list? x) (eq? (first x) 'let)))
 
+(define (labels? x)
+  (and
+    (list? x)
+    (equal? (first x) 'labels)))
+
+; For the labels form, a new set of unique labels are created
+; and the initial environment is constructed to map each of 
+; the lvars to its corresponding label.
+;
+; <Prog>  ::= (labels ((lvar <LExpr>) ...) <Expr>)
+;
+(define (emit-labels x si env)
+  (unless (equal? (first x) 'labels)
+    (error "expected labels expression" x))
+  (unless (eq? (length x) 3)
+    (error "syntax error: expected (label ([lvar ...]) expr)"))
+
+  (let ([lvars (second x)]
+        [expr (third x)])
+    (emit-lvars lvars si env)))
+
+(define (emit-lvars x si env)
+  (cond
+    [(empty? x) null]
+    [else (map (lambda (var) (emit-lvar var si env)) x)]))
+
+(define (emit-lvar x si env)
+  (let ([label-name (first x)]
+        [code (second x)])
+    (unless (symbol? label-name)
+      (error "expected symbol" label-name))
+    (unless (code? code)
+      (error "expected (code ...) expr" code))))
+
+(define (first-symbol-eq? l symbol)
+  (and
+    (list? l)
+    (equal? (first l) symbol)))
+
+(define (labelcall? code)
+  (first-symbol-eq? code 'labelcall))
+
+(define (code? code)
+  (first-symbol-eq? code 'code))
+
+; For each code expression, the label is first emitted, followed
+; by the code of the body. The environment used for the body
+; contains, in addition to the lvars, a mapping of each of the
+; formal parameters to the first set of stack locations (−4, −8,
+; etc.). The stack index used for evaluating the body starts above
+; the last index used for the formals.
+;
+; <LExpr> ::= (code (var ...) <Expr>)
+;
+(define (emit-code x si env)
+  #f)
+
+; For a (labelcall lvar e ...), the arguments are evaluated and
+; their values are saved in consecutive stack locations, skip-
+; ping one location to be used for the return-point. Once all
+; of the arguments are evaluated, the value of the stack-pointer,
+; %esp is incremented to point to one word below the return-point.
+; A call to the label associated with the lvar is issued. A call
+; instruction decrements the value of %esp by 4 and saves the ad-
+; dress of the next instruction in the appropriate return-point
+; slot. Once the called procedure returns (with a value in %eax),
+; the stack pointer is adjusted back to its initial position.
+(define (emit-labelcall x si env)
+  (unless (equal? (first x) 'labelcall) (error "expected 'labelcall" x))
+  (let ([label-name (second x)]
+        [args (list-tail x 2)])
+    (unless (symbol? label-name) (error "expected label-name to be symbol" x))
+    #f))
+
 (define (make-env) (hash))
+
 (define (extend-env variable-name stack-index env)
   (hash-set env variable-name stack-index))
 
@@ -395,6 +478,10 @@
        (emit-cons (cons-head x) (cons-tail x) si env)]
       [(string? x)
        (emit-string x si env)]
+      [(labels? x)
+       (emit-labels x si env)]
+      [(labelcall? x)
+       (emit-labelcall x si env)]
       [else
         (error (format "don't know how to emit expression \"~a\"" (value->string x)))])))
 

@@ -41,8 +41,8 @@
 
   (check-prog 5 "5")
   (check-prog 5439 "5439")
-  (check-prog #\a "a")
-  (check-prog #\Z "Z"))
+  (check-prog #\a "#\\a")
+  (check-prog #\Z "#\\Z"))
 
 (test-case
   "Unary expressions"
@@ -55,9 +55,9 @@
 (test-case
   "Primitive conversions"
 
-  (check-prog '(integer->char 65) "A")
-  (check-prog '(integer->char 97) "a")
-  (check-prog '(integer->char 0) "\u0000")
+  (check-prog '(integer->char 65) "#\\A")
+  (check-prog '(integer->char 97) "#\\a")
+  (check-prog '(integer->char 0) "#\\nul")
   (check-prog '(char->integer #\a) "97")
   (check-prog '(char->integer #\F) "70")
   (check-prog '(char->integer #\u0000) "0"))
@@ -154,6 +154,14 @@
 
   (check-prog "hello" "\"hello\"")
   (check-prog "" "\"\""))
+
+#|
+(test-case
+  "Labels"
+
+  (check-prog '(labels ((addfoo (code (a b) (+ a b))))
+    (labelcall addfoo 5 6)) "11"))
+|#
 ;))
 
 ;(require rackunit/text-ui)

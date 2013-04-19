@@ -55,7 +55,10 @@ static void print_fixnum(scheme_val val) {
 
 static void print_char(scheme_val val) {
     unsigned char c = val >> char_shift;
-    printf("%c", c);
+    if (c == 0)
+        printf("#\\nul");
+    else
+        printf("#\\%c", c);
 }
 
 static void print_boolean(scheme_val val) {
