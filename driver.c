@@ -38,8 +38,16 @@
 
 scheme_val scheme_entry();
 
-int is_fixnum(scheme_val val) {
+static int is_fixnum(scheme_val val) {
     return (val & fixnum_mask) == fixnum_tag;
+}
+
+static int is_pair(scheme_val val) {
+    return (val & heap_mask) == pair_tag;
+}
+
+static int is_empty_list(scheme_val val) {
+    return val == empty_list;
 }
 
 static scheme_val UNPACK_FIXNUM(scheme_val a) {
@@ -65,15 +73,33 @@ static void print_boolean(scheme_val val) {
     printf(val >> boolean_shift ? "#t" : "#f");
 }
 
-static void print_pair(scheme_val val, int* return_code) {
+static void print_pair(scheme_val val, int* return_code, int skipParens) {
     scheme_val* head = (scheme_val*)(val - 1);
     scheme_val* tail = (scheme_val*)(val - 1 + wordsize);
 
-    printf("(");
+    if (!skipParens)
+        printf("(");
+
     print_value(*head, return_code);
-    printf(" . ");
-    print_value(*tail, return_code);
-    printf(")");
+
+    /* (from the Racket docs for pairs)
+      
+       In general, the rule for printing a pair is as follows: use the dot notation
+       always, but if the dot is immediately followed by an open parenthesis, then
+       remove the dot, the open parenthesis, and the matching close parenthesis.
+       Thus, ’(0 . (1 . 2)) becomes '(0 1 . 2), and ’(1 . (2 . (3 . ()))) becomes
+       '(1 2 3).
+     */
+    if (is_pair(*tail)) {
+        printf(" ");
+        print_pair(*tail, return_code, 1);
+    } else if (!is_empty_list(*tail)) {
+        printf(" . ");
+        print_value(*tail, return_code);
+    }
+
+    if (!skipParens)
+        printf(")");
 }
 
 static void print_vector(scheme_val val) {
@@ -103,10 +129,10 @@ void print_value(scheme_val val, int* return_code) {
         print_char(val);
     } else if ((val & boolean_mask) == boolean_tag) {
         print_boolean(val);
-    } else if (val == empty_list) {
+    } else if (is_empty_list(val)) {
         printf("'()");
-    } else if ((val & heap_mask) == pair_tag) {
-        print_pair(val, return_code);
+    } else if (is_pair(val)) {
+        print_pair(val, return_code, 0);
     } else if ((val & heap_mask) == vector_tag) {
         print_vector(val);
     } else if ((val & heap_mask) == string_tag) {

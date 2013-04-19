@@ -126,13 +126,18 @@
     (bitwise-and n (bitwise-not mask))
     (bitwise-and tag mask)))
 
+(define (immediate? x)
+  (for/or
+      ([pred (list integer? char? boolean? empty-list-quote?)])
+    (pred x)))
+
 (define (immediate-rep x)
   ; Return the integer constant that represents x
   (cond
     [(integer? x) (apply-tag (shift x fixnum-shift) fixnum-mask fixnum-tag)]
     [(char? x) (apply-tag (shift (char->integer x) char-shift) char-mask char-tag)]
     [(boolean? x) (apply-tag (shift (if x 1 0) boolean-shift) boolean-mask boolean-tag)]
-    [(null? x) empty-list]
+    [(empty-list-quote? x) empty-list]
     [else (raise-argument-error 'x "don't know how to provide an immediate-rep" x)]))
 
 (define (primcall? x)
@@ -144,11 +149,6 @@
 (define (primcall-op x) (first x))
 (define (primcall-operand1 x) (second x))
 (define (primcall-operand2 x) (third x))
-
-(define (immediate? x)
-  (for/or
-      ([pred (list integer? char? boolean? null?)])
-    (pred x)))
 
 (define (variable? x) (symbol? x))
 (define (lookup x env) (hash-ref env x))
@@ -483,7 +483,10 @@
       [(labelcall? x)
        (emit-labelcall x si env)]
       [else
-        (error (format "don't know how to emit expression \"~a\"" (value->string x)))])))
+        (raise-argument-error 'x "don't know how to emit" x)])))
+
+(define (empty-list-quote? x)
+  (equal? x (quote (quote ()))))
 
 (define (setup-stack-frame proc)
   (define (arg n) ; 32 bit

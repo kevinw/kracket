@@ -32,136 +32,134 @@
     (check-prog-output program 'x86 expected-output)
     (check-prog-output program 'x86_64 expected-output)))
 
-;(define compiler-tests
-  ;(test-suite
-    ;"Tests for the compiler"
+(define (test-progs name test-cases)
+  (test-case name
+    (for ([test-case test-cases])
+      (unless (eq? (length test-case) 2)
+        (error "expected test case to have format (program expected-test-case)"))
+      (let ([program (first test-case)]
+            [expected-output (value->string (second test-case))])
+        (check-prog program expected-output)))))
 
-(test-case
+(test-progs
   "Primitives"
 
-  (check-prog 5 "5")
-  (check-prog 5439 "5439")
-  (check-prog #\a "#\\a")
-  (check-prog #\Z "#\\Z"))
+  '((5 5)
+    (5439 5439)
+    (#\a #\a)
+    (#\Z #\Z)))
 
-(test-case
+(test-progs
   "Unary expressions"
 
-  (check-prog '(add1 5) "6")
-  (check-prog '(add1 -1) "0")
-  (check-prog '(sub1 43) "42")
-  (check-prog '(sub1 0) "-1"))
+  '(((add1 5) 6)
+    ((add1 -1) 0)
+    ((sub1 43) 42)
+    ((sub1 0) -1)))
 
-(test-case
+(test-progs
   "Primitive conversions"
 
-  (check-prog '(integer->char 65) "#\\A")
-  (check-prog '(integer->char 97) "#\\a")
-  (check-prog '(integer->char 0) "#\\nul")
-  (check-prog '(char->integer #\a) "97")
-  (check-prog '(char->integer #\F) "70")
-  (check-prog '(char->integer #\u0000) "0"))
+  '(((integer->char 65) #\A)
+    ((integer->char 97) #\a)
+    ((integer->char 0) #\nul)
+    ((char->integer #\a) 97)
+    ((char->integer #\F) 70)
+    ((char->integer #\u0000) 0)))
 
-(test-case
+(test-progs
   "Primitive predicates"
 
-  (check-prog '(zero? 0)' "#t")
-  (check-prog '(zero? -1)' "#f")
-  (check-prog '(zero? 1)' "#f")
-  (check-prog '(zero? 9999)' "#f")
-  (check-prog '(zero? #f)' "#f")
-  (check-prog '(zero? #t)' "#f")
+  '(((zero? 0) #t)
+    ((zero? -1) #f)
+    ((zero? 1) #f)
+    ((zero? 9999) #f)
+    ((zero? #f) #f)
+    ((zero? #t) #f)
 
-  (check-prog '(integer? 0) "#t")
-  (check-prog '(integer? -1) "#t")
-  (check-prog '(integer? 500) "#t")
-  (check-prog '(integer? #\c) "#f")
-  (check-prog '(integer? #f) "#f")
-  (check-prog '(integer? #t) "#f")
+    ((integer? 0) #t)
+    ((integer? -1) #t)
+    ((integer? 500) #t)
+    ((integer? #\c) #f)
+    ((integer? #f) #f)
+    ((integer? #t) #f)
 
-  (check-prog '(boolean? #t) "#t")
-  (check-prog '(boolean? #f) "#t")
-  (check-prog '(boolean? 0) "#f")
-  (check-prog '(boolean? -1) "#f")
-  (check-prog '(boolean? 500) "#f")
-  (check-prog '(boolean? #\c) "#f"))
+    ((boolean? #t) #t)
+    ((boolean? #f) #t)
+    ((boolean? 0) #f)
+    ((boolean? -1) #f)
+    ((boolean? 500) #f)
+    ((boolean? #\c) #f)))
 
-(test-case
+(test-progs
   "Binary primitives"
 
-  (check-prog '(+ 4 9) "13")
-  (check-prog '(+ 0 0) "0")
+  '(((+ 4 9) 13)
+    ((+ 0 0) 0)
 
-  (check-prog '(- 0 5) "-5")
-  (check-prog '(- 100 99) "1")
+    ((- 0 5) -5)
+    ((- 100 99) 1)
 
-  (check-prog '(* 3 7) "21")
-  (check-prog '(* -2 -3) "6")
-  (check-prog '(* -1 1000) "-1000")
+    ((* 3 7) 21)
+    ((* -2 -3) 6)
+    ((* -1 1000) -1000)
 
-  (check-prog '(= 0 1) "#f")
-  (check-prog '(= 0 0) "#t")
-  (check-prog '(= -500 -500) "#t")
+    ((= 0 1) #f)
+    ((= 0 0) #t)
+    ((= -500 -500) #t)
 
-  (check-prog '(< 0 1) "#t")
-  (check-prog '(< 1 1) "#f")
-  (check-prog '(< 10 10) "#f"))
+    ((< 0 1) #t)
+    ((< 1 1) #f)
+    ((< 10 10) #f)))
 
-(test-case
+(test-progs
   "Let expressions"
 
-  (check-prog '(let ((a 1)) a) "1")
-  (check-prog '(let ((a 2) (b 150)) (* a b)) "300"))
+  '(((let ((a 1)) a) 1)
+    ((let ((a 2) (b 150)) (* a b)) 300)))
 
-(test-case
+(test-progs
   "If expressions"
 
-  (check-prog '(if #t 1 2) "1")
-  (check-prog '(if #f 1 2) "2")
-  (check-prog '(if #\c
-                 (let [(foo #\f)]
-                   (if foo 42 100))
-                 99)
-              "42"))
+  '(((if #t 1 2) 1)
+    ((if #f 1 2) 2)
+    ((if #\c
+      (let [(foo #\f)]
+        (if foo 42 100))
+          99)
+      42)))
 
-(test-case
+(test-progs
   "Cons"
 
-  (check-prog '(cons 10 20) "(10 . 20)")
-  (check-prog '(cons 10 (cons 20 30)) "(10 . (20 . 30))"))
+  '(((cons 10 20) (10 . 20))
+    ((cons 10 (cons 20 30)) (10 20 . 30))))
 
-(test-case
+(test-progs
   "Car/Cdr"
 
-  (check-prog '(car (cons 10 20)) "10")
-  (check-prog '(cdr (cons 10 20)) "20")
-  (check-prog '(pair? (cons 1 2)) "#t")
-  (check-prog '(pair? 1) "#f")
-  (check-prog '(pair? #\c) "#f"))
+  '(((car (cons 10 20)) 10)
+    ((cdr (cons 10 20)) 20)
+    ((pair? (cons 1 2)) #t)
+    ((pair? 1) #f)
+    ((pair? #\c) #f)))
 
-(test-case
+(test-progs
   "Vectors"
 
-  (check-prog '(make-vector 1) "#(0)")
-  (check-prog '(vector? (make-vector 1)) "#t")
-  (check-prog '(vector? #f) "#f")
-  (check-prog '(vector? 5) "#f")
+  '(((make-vector 1) #(0))
+    ((vector? (make-vector 1)) #t)
+    ((vector? #f) #f)
+    ((vector? 5) #f)
 
-  (check-prog '(vector-length (make-vector 30)) "30"))
+    ((vector-length (make-vector 30)) 30)))
 
-(test-case
+(test-progs
   "Strings"
 
-  (check-prog "hello" "\"hello\"")
-  (check-prog "" "\"\""))
+  '(("hello" "hello")
+    ("" "")))
 
-#|
-(test-case
-  "Labels"
-
-  (check-prog '(labels ((addfoo (code (a b) (+ a b))))
-    (labelcall addfoo 5 6)) "11"))
-|#
 ;))
 
 ;(require rackunit/text-ui)
