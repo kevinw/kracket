@@ -29,8 +29,8 @@
   (define program-string (with-output-to-string (lambda () (write program))))
 
   (test-begin
-    (check-prog-output program 'x86 expected-output)
-    (check-prog-output program 'x86_64 expected-output)))
+    (check-prog-output program "x86" expected-output)
+    (check-prog-output program "x86_64" expected-output)))
 
 (define (test-progs name test-cases)
   (test-case name

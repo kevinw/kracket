@@ -1,11 +1,10 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <assert.h>
+#include <inttypes.h>
 
 #include "binary.h"
 #include "aux.h"
-
-#define DRIVER_DEBUG 0
 
 #define fixnum_mask     B8(00000011)
 #define fixnum_tag      B8(00000000)
@@ -28,11 +27,8 @@
 #define symbol_tag      B8(00000101)
 #define closure_tag     B8(00000110)
 
-
 #define HEAP_SIZE ((size_t)(5 * 1024 * 1024))
 #define wordsize sizeof(size_t)
-
-#include <inttypes.h>
 
 #define scheme_val intptr_t
 
@@ -150,10 +146,6 @@ int main(int argc, char**argv) {
         fprintf(stderr, "could not pre-allocate heap");
         return 1;
     }
-
-#if DRIVER_DEBUG
-    printf("HEAP PTR %p\n", heap);
-#endif
 
     scheme_val val = scheme_entry(heap);
 

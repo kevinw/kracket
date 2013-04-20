@@ -13,73 +13,47 @@
          emit-expr
          primcall?)
 
-(define default-arch 'x86_64)
+(define default-arch "x86_64")
 
 (require "assembler.rkt")
-
-; TODO: make define-registers
-
-(define esi 'esi)
-(define esp 'esp)
-(define ebp 'ebp)
-(define edi 'edi)
-(define eax 'eax)
-(define rax 'rax)
-(define rsp 'rsp)
-(define al  'al)
 
 (struct arch (name size-suffix word-size scratch-register scratch-2-register stack-register heap-register str-src-reg str-dest-reg str-count-reg gcc-arch) #:transparent)
 (define architectures
   (list
-    (list 'x86    (arch "x86"    "l" 4 'eax 'ebx 'esp 'esi 'esi 'edi 'ecx "i386"))
-    (list 'x86_64 (arch "x86_64" "q" 8 'rax 'rbx 'rsp 'rsi 'rsi 'rdi 'rcx "x86_64"))))
+    (arch "x86"    "l" 4 'eax 'ebx 'esp 'esi 'esi 'edi 'ecx "i386")
+    (arch "x86_64" "q" 8 'rax 'rbx 'rsp 'rsi 'rsi 'rdi 'rcx "x86_64")))
 
-(define current-arch-param (make-parameter default-arch))
-(define word-size-param (make-parameter 8))
-(define scratch-register (make-parameter rax))
-(define scratch-2-register (make-parameter 'rbx))
-(define stack-register-param (make-parameter rsp))
-(define heap-register-param (make-parameter 'rdi))
-(define str-src-reg-param (make-parameter 'rsi))
-(define str-dest-reg-param (make-parameter 'rdi))
-(define str-count-reg-param (make-parameter 'rcx))
+(define archs-by-name
+  (make-immutable-hash
+    (for/list ([arch architectures])
+      (cons (arch-name arch) arch))))
 
-(define (arch-parameterize arch cb)
-  (let ([arch (second (assoc arch architectures))])
-    (parameterize ([current-arch-param arch]
-                   [current-size-suffix (arch-size-suffix arch)]
-                   [word-size-param (arch-word-size arch)]
-                   [scratch-register (arch-scratch-register arch)]
-                   [scratch-2-register (arch-scratch-2-register arch)]
-                   [stack-register-param (arch-stack-register arch)]
-                   [heap-register-param (arch-heap-register arch)]
-                   [str-src-reg-param (arch-str-src-reg arch)]
-                   [str-dest-reg-param (arch-str-dest-reg arch)]
-                   [str-count-reg-param (arch-str-count-reg arch)])
+(define arch-param (make-parameter (hash-ref archs-by-name default-arch)))
 
+(define (arch-parameterize arch-name cb)
+  (let ([arch (hash-ref archs-by-name arch-name)])
+    (parameterize ([arch-param arch]
+                   [current-size-suffix (arch-size-suffix arch)])
       (cb))))
 
 ; define syntax shortcuts for accessing parameters like they were just identifiers
-(define-syntax-rule (define-param-id <id> <param>)
+(define-syntax-rule (define-param-id <id> <struct-getter>)
   (define-syntax <id>
     (syntax-id-rules ()
-      [<id> (<param>)])))
+      [<id> (<struct-getter> (arch-param))])))
 
-; TODO: this is embarassing. parameterize one architecture variable, and then
-; define macros off that.
-(define-param-id current-arch current-arch-param)
-(define-param-id word-size word-size-param)
-(define-param-id scratch scratch-register)
-(define-param-id scratch-2 scratch-2-register)
-(define-param-id stack-register stack-register-param)
-(define-param-id heap-register heap-register-param)
-(define-param-id str-src-reg str-src-reg-param)
-(define-param-id str-dest-reg str-dest-reg-param)
-(define-param-id str-count-reg str-count-reg-param)
+(define-param-id word-size arch-word-size)
+(define-param-id scratch arch-scratch-register)
+(define-param-id scratch-2 arch-scratch-2-register)
+(define-param-id stack-register arch-stack-register)
+(define-param-id heap-register arch-heap-register)
+(define-param-id str-src-reg arch-str-src-reg)
+(define-param-id str-dest-reg arch-str-dest-reg)
+(define-param-id str-count-reg arch-str-count-reg)
 
 (define (compile-cmd input output arch)
   ; Returns the GCC command to link together a complete progam.
-  (define gcc-arch-flag (arch-gcc-arch (second (assoc arch architectures))))
+  (define gcc-arch-flag (arch-gcc-arch (hash-ref archs-by-name arch)))
   (define CFLAGS (format "-std=c99 -Wall -g -O3 -arch ~a" gcc-arch-flag)) ; TODO: parse this from the Makefile? emit the makefile?
   (define LFLAGS "-Wl,-no_pie")
 
@@ -188,7 +162,7 @@
     (and! mask scratch)
     (cmp tag scratch)
     (mov 0 scratch)
-    (sete al)
+    (sete 'al)
     (sal boolean-shift scratch)
     (or! boolean-tag scratch)))
 
@@ -210,14 +184,14 @@
      (prep-binary-call x si env)
      (cmp (stack-ptr si) scratch)
      (mov 0 scratch)
-     (sete al)
+     (sete 'al)
      (sal boolean-shift scratch)
      (or! boolean-tag scratch))]
     [(<) (list
      (prep-binary-call x si env)
      (cmp (stack-ptr si) scratch)
      (mov 0 scratch)
-     (setl al)
+     (setl 'al)
      (sal boolean-shift scratch)
      (or! boolean-tag scratch))]
     [(add1) (list
@@ -237,7 +211,7 @@
      (emit-expr (primcall-operand1 x) si env)
      (cmp 0 scratch)
      (mov 0 scratch)
-     (sete al)
+     (sete 'al)
      (sal boolean-shift scratch)
      (or! boolean-tag scratch))]
     [(integer?) (list
@@ -312,7 +286,7 @@
   (void))
 
 (define (data-ref label-name)
-  (if (equal? (arch-name current-arch) "x86")
+  (if (equal? (arch-name (arch-param)) "x86")
     (format "~a" label-name)
     (format "~a(%rip)" label-name)))
 
@@ -326,7 +300,7 @@
 
     (push heap-register)
 
-    (mov heap-register str-dest-reg) ; destination: edi
+    (mov heap-register str-dest-reg) ; destination
     (add word-size str-dest-reg)
 
     (data label utf8-bytes)
@@ -490,19 +464,18 @@
 
 (define (setup-stack-frame proc)
   (define (arg n) ; 32 bit
-    (offset (+ word-size (* word-size n)) ebp))
-  (if (equal? (arch-name current-arch) "x86")
+    (offset (+ word-size (* word-size n)) 'ebp))
+  (if (equal? (arch-name (arch-param)) "x86")
     (list
-      ; todo make a macro for this ala (preserve (ebx esi) proc)
-      (push ebp)
-      (mov esp ebp)
+      (push 'ebp)
+      (mov 'esp 'ebp)
       (push 'ebx)
-      (push esi)
-      (mov (arg 1) esi) ; first param is heap pointer passed into scheme_entry
+      (push 'esi)
+      (mov (arg 1) 'esi) ; first param is heap pointer passed into scheme_entry
       (proc)
-      (pop esi)
+      (pop 'esi)
       (pop 'ebx)
-      (pop ebp))
+      (pop 'ebp))
     (list
       (push 'rbx)
       (unless (equal? 'rdi heap-register) ; first arg is pointer to heap; move to our heap-register
@@ -542,10 +515,10 @@
     (system-check (compile-cmd assembly tmp-file arch))
     tmp-file))
 
+; read filename, output filename, arch from the command-line
 (let [(args (current-command-line-arguments))]
   (when (> (vector-length args) 0)
     (let ([input-filename (vector-ref args 0)]
           [output-filename (vector-ref args 1)]
-          [arch (if (> (vector-length args) 2) (string->symbol (vector-ref args 2)) default-arch)])
+          [arch (if (> (vector-length args) 2) (vector-ref args 2) default-arch)])
        (compile-file input-filename output-filename arch))))
-
